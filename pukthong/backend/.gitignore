@@ -1,0 +1,14 @@
+# ความลับ — ห้ามขึ้น git เด็ดขาด (ใช้ .env.example เป็นแม่แบบแทน)
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+*.tsbuildinfo
+
+# รูปใบเสร็จที่อัปโหลดตอน dev
+uploads/
+
+.DS_Store
+*.code-workspace
