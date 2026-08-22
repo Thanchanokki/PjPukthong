@@ -17,6 +17,8 @@ export async function ensureIndexes(): Promise<void> {
   const stale = [
     receipts.dropIndex("receipts_file_hash_uq"),
     transactions.dropIndex("transactions_occurred_on_idx"),
+    // เปลี่ยนชื่อฟิลด์เป็น purchasedAt แล้ว index ที่ชี้ occurredOn จึงไม่มีใครใช้
+    transactions.dropIndex("transactions_user_occurred_on_idx"),
     transactions.dropIndex("transactions_receipt_id_idx"),
   ];
   await Promise.all(
@@ -33,8 +35,13 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: "receipts_user_file_hash_uq" },
   );
   await transactions.createIndex(
-    { userId: 1, occurredOn: -1, createdAt: -1 },
-    { name: "transactions_user_occurred_on_idx" },
+    { userId: 1, purchasedAt: -1, createdAt: -1 },
+    { name: "transactions_user_purchased_at_idx" },
+  );
+  // เรียง feed ตามเวลาที่ระบบรับรู้ — คนละแกนกับการสรุปยอดรายเดือน
+  await transactions.createIndex(
+    { userId: 1, uploadedAt: -1 },
+    { name: "transactions_user_uploaded_at_idx" },
   );
   await transactions.createIndex(
     { userId: 1, receiptId: 1 },

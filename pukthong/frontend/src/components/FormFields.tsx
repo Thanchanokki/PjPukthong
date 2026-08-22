@@ -5,6 +5,7 @@
  * re-render React จะ unmount/mount input ใหม่ทุกครั้งที่พิมพ์ แล้ว cursor จะหลุด
  */
 import type { LineItem } from "../api";
+import { CATEGORIES } from "../categories";
 import { type Form, emptyItem } from "./TransactionForm";
 
 export function Field({
@@ -40,28 +41,42 @@ export function Field({
 }
 
 /** รายรับ/รายจ่าย — AI ไม่ได้บอกมา ผู้ใช้เลือกเอง */
-export function DirectionToggle({
+/**
+ * ดรอปดาวน์หมวด — เลือกจากชุดตายตัวเท่านั้น พิมพ์เองไม่ได้
+ *
+ * เดิมเป็นช่องพิมพ์อิสระ ซึ่งทำให้ "อาหาร" กับ "อาหารเช้า" กลายเป็นคนละหมวด
+ * แล้ว dashboard รวมยอดข้ามเดือนไม่ได้ — ดู categories.ts
+ */
+export function CategorySelect({
   value,
   onChange,
+  className = "field",
+  label,
 }: {
-  value: Form["direction"];
-  onChange: (v: Form["direction"]) => void;
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  label?: string;
 }) {
-  return (
-    <div className="flex gap-2">
-      {(["expense", "income"] as const).map((d) => (
-        <button
-          key={d}
-          onClick={() => onChange(d)}
-          className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
-            value === d
-              ? "border-teal-700 bg-teal-700 text-white"
-              : "border-slate-300 bg-white text-slate-600"
-          }`}
-        >
-          {d === "expense" ? "รายจ่าย" : "รายรับ"}
-        </button>
+  const select = (
+    <select
+      className={className}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">— เลือกหมวด —</option>
+      {CATEGORIES.map((c) => (
+        <option key={c} value={c}>
+          {c}
+        </option>
       ))}
+    </select>
+  );
+  if (!label) return select;
+  return (
+    <div>
+      <label className="label">{label}</label>
+      {select}
     </div>
   );
 }
@@ -103,18 +118,20 @@ export function TransactionFields({
         />
       </div>
 
+      {/* วันที่บนใบ ไม่ใช่วันที่สแกน — ตัวนี้เป็นตัวตัดสินว่ายอดไปอยู่เดือนไหน
+          ส่วนเวลาที่สแกนเข้าระบบ ระบบบันทึกให้เองและแก้ไม่ได้ */}
       <Field
-        label="วันที่ *"
+        label="วันที่บนใบเสร็จ *"
         type="date"
-        value={form.occurred_on}
-        onChange={onChange("occurred_on")}
+        value={form.purchased_at}
+        onChange={onChange("purchased_at")}
         warn={warn("issued_at")}
       />
       <Field
-        label="เวลา"
+        label="เวลาบนใบเสร็จ"
         type="time"
-        value={form.occurred_at_time}
-        onChange={onChange("occurred_at_time")}
+        value={form.purchased_time}
+        onChange={onChange("purchased_time")}
       />
 
       <Field
@@ -156,12 +173,6 @@ export function TransactionFields({
       />
 
       <Field
-        label="หมวด"
-        value={form.category}
-        onChange={onChange("category")}
-        placeholder="อาหาร, เดินทาง, …"
-      />
-      <Field
         label="ช่องทางจ่าย"
         value={form.payment_method}
         onChange={onChange("payment_method")}
@@ -171,6 +182,30 @@ export function TransactionFields({
         <Field label="หมายเหตุ" value={form.note} onChange={onChange("note")} />
       </div>
     </div>
+  );
+}
+
+/**
+ * ราคาต่อชิ้นที่คำนวณจากจำนวนกับยอดรวมของบรรทัดนั้น
+ *
+ * เป็นตัวช่วยตรวจ ไม่ใช่ช่องกรอก — ถ้า AI อ่านจำนวนหรือยอดผิด ตัวเลขนี้จะดูผิดปกติ
+ * ทันที (เช่น นม 2 กล่อง 450 บาท -> 225/ชิ้น) ทำให้จับได้ก่อนกดบันทึก
+ */
+function UnitPriceHint({
+  qty,
+  amount,
+}: {
+  qty: string | null;
+  amount: string | null;
+}) {
+  const q = Number(qty);
+  const a = Number(amount);
+  // ไม่แสดงตอนจำนวนเป็น 1 เพราะราคาต่อชิ้นก็คือยอดนั้นเอง ไม่ได้ให้ข้อมูลเพิ่ม
+  if (!Number.isFinite(q) || !Number.isFinite(a) || q <= 1 || a <= 0) return null;
+  return (
+    <span className="text-xs text-slate-400">
+      ≈ ฿{(a / q).toLocaleString("th-TH", { maximumFractionDigits: 2 })}/ชิ้น
+    </span>
   );
 }
 
@@ -184,28 +219,61 @@ export function ItemsEditor({
   setItems: React.Dispatch<React.SetStateAction<LineItem[]>>;
   incomplete?: boolean;
 }) {
-  const patch = (i: number, key: "name" | "amount", v: string) =>
-    setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [key]: v } : x)));
+  const patch = (i: number, key: "name" | "amount" | "qty" | "category", v: string) =>
+    setItems((xs) =>
+      xs.map((x, j) =>
+        j === i ? { ...x, [key]: key === "category" && v === "" ? null : v } : x,
+      ),
+    );
+
+  /** หมวดที่ AI เดามาใช้เป็นค่าตั้งต้น จนกว่าผู้ใช้จะแก้ */
+  const categoryOf = (it: LineItem) => it.category ?? it.category_guess ?? "";
+
+  // แถวว่างที่ยังไม่ได้กรอกอะไรเลย (เพิ่งกด + เพิ่มรายการ) ไม่ควรถูกนับว่าเป็น
+  // "รายการ" จริง — ตัวเลขในหัวข้อจึงนับเฉพาะแถวที่มีชื่อหรือยอดแล้วเท่านั้น
+  const filledCount = items.filter(
+    (it) => (it.name ?? "").trim() !== "" || (it.amount ?? "") !== "",
+  ).length;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-        <span className="text-sm font-medium">รายการสินค้า ({items.length})</span>
+        <span className="text-sm font-medium">รายการสินค้า ({filledCount})</span>
         {incomplete && <span className="text-xs text-amber-700">⚠️ อ่านได้ไม่ครบ</span>}
       </div>
 
       {items.length > 0 && (
+        <div className="flex items-center gap-2 px-3 pt-2 text-xs text-slate-400">
+          <span className="w-14 shrink-0 text-center">จำนวน</span>
+          <span className="min-w-0 flex-1">รายการ</span>
+          <span className="w-20 shrink-0 text-right">ราคา</span>
+          {/* ช่องว่างให้เท่ากับปุ่ม ✕ ทางขวาสุดของแต่ละแถว หัวคอลัมน์จะได้ตรงกัน */}
+          <span className="w-5 shrink-0" aria-hidden="true" />
+        </div>
+      )}
+
+      {items.length > 0 && (
         <ul className="divide-y divide-slate-100 text-sm">
           {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-2 px-3 py-2">
+            <li key={i} className="px-3 py-2">
+              <div className="flex items-center gap-2">
+              {/* จำนวนรับทศนิยมได้ (ของชั่งกิโล เช่น 0.375) — backend เก็บถึง 3 ตำแหน่ง */}
               <input
-                className="field flex-1"
+                className="field w-14 shrink-0 text-center"
+                value={it.qty ?? ""}
+                inputMode="decimal"
+                placeholder="จำนวน"
+                aria-label="จำนวน"
+                onChange={(e) => patch(i, "qty", e.target.value)}
+              />
+              <input
+                className="field min-w-0 flex-1"
                 value={it.name ?? ""}
                 placeholder="ชื่อรายการ"
                 onChange={(e) => patch(i, "name", e.target.value)}
               />
               <input
-                className="field w-24 text-right"
+                className="field w-20 shrink-0 text-right"
                 value={it.amount ?? ""}
                 inputMode="decimal"
                 placeholder="0.00"
@@ -226,6 +294,21 @@ export function ItemsEditor({
               >
                 ✕
               </button>
+              </div>
+
+              {/* หมวดรายชิ้นคือสิ่งที่ dashboard เอาไปสรุป — ต้องแก้ได้ง่ายตรงนี้
+                  ช่องที่ยังไม่มีหมวดจะเป็นสีเหลืองเพื่อให้เห็นว่าต้องเลือกเอง */}
+              <div className="mt-1.5 flex items-center gap-2 pl-1">
+                <span className="text-xs text-slate-400">หมวด</span>
+                <CategorySelect
+                  value={categoryOf(it)}
+                  onChange={(v) => patch(i, "category", v)}
+                  className={`field h-8 w-44 py-0 text-xs ${
+                    categoryOf(it) ? "" : "field-warn"
+                  }`}
+                />
+                <UnitPriceHint qty={it.qty} amount={it.amount} />
+              </div>
             </li>
           ))}
         </ul>
@@ -248,17 +331,27 @@ export function SaveBar({
   onSave,
   disabled,
   pending,
+  variant = "primary",
 }: {
   onSave: () => void;
   disabled: boolean;
   pending: boolean;
+  /**
+   * "stamp" = ปุ่มแดงตาม mockup หน้ากรอกด้วยตนเอง
+   * "primary" (ค่าเริ่มต้น) = ปุ่มเขียว teal เดิม ใช้ที่หน้ารีวิว OCR ต่อไปเหมือนเดิม
+   */
+  variant?: "primary" | "stamp";
 }) {
   return (
     <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
       <button
         onClick={onSave}
         disabled={disabled || pending}
-        className="btn-primary w-full py-3 text-base"
+        className={
+          variant === "stamp"
+            ? "w-full rounded-lg bg-stamp py-3 text-base font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            : "btn-primary w-full py-3 text-base"
+        }
       >
         {pending ? "กำลังบันทึก…" : "บันทึกรายการ"}
       </button>

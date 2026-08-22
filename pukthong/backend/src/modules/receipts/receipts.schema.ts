@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { normalize as normalizeCategory } from "../../shared/categories.js";
 import {
   currencyField,
   decField,
@@ -17,13 +18,21 @@ import {
   toTimeString,
 } from "../../shared/zod.js";
 
+/**
+ * หมวดที่ AI เดามา — บีบให้เป็นหนึ่งในชุดที่ระบบรู้จัก ไม่งั้นคืน null
+ *
+ * ทำตรงนี้แทนที่จะเชื่อ prompt อย่างเดียว เพราะโมเดลตอบนอกรายการได้เสมอ
+ * และหมวดที่หลุดรายการจะทำให้ dashboard แตกเป็นหมวดขยะ
+ */
+const categoryField = z.preprocess(normalizeCategory, z.string().nullable());
+
 const lineItemSchema = z.object({
   qty: decField,
   name: strField,
   unit_price: decField,
   amount: decField,
   flag: strField,
-  category_guess: strField,
+  category_guess: categoryField,
 });
 
 export type LineItem = z.infer<typeof lineItemSchema>;

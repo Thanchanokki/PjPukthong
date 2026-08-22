@@ -68,6 +68,7 @@ openssl rand -hex 32          # ได้ค่ามาแล้ววางต
 
 ```dotenv
 KKU_API_KEY=sk_xxxxxxxxxxxxxxxxxxxx
+GOOGLE_VISION_API_KEY=AIza…(ไม่บังคับ — ดูด้านล่าง)
 MONGODB_URI=mongodb://pukthong_admin:change_me_in_local_env@localhost:27017/pukthong?authSource=admin
 JWT_SECRET=3f9c…(ค่าที่สุ่มได้)
 ```
@@ -81,6 +82,17 @@ JWT_SECRET=3f9c…(ค่าที่สุ่มได้)
 
 `MONGODB_URI` ต้องตรงกับ user/password ที่สร้างไว้ใน MongoDB ของตัวเอง — `authSource=admin`
 หมายถึง "user ตัวนี้ถูกสร้างไว้ในฐานข้อมูล admin" ส่วนข้อมูลจริงเขียนลงฐานข้อมูล `pukthong`
+
+### `GOOGLE_VISION_API_KEY` — ไม่บังคับ แต่ช่วยให้อ่านตัวเลขแม่นขึ้นมาก
+
+ถ้าเติม key นี้ ระบบจะให้ Google Cloud Vision อ่านตัวอักษรบนใบเสร็จตั้งแต่ตอนอัปโหลด
+แล้วส่งข้อความนั้นไปพร้อมรูปตอนกดปุ่ม ✨ เพื่อให้ AI ยึดตัวเลขตาม OCR แทนที่จะเดาจากพิกเซล
+— ช่วยเรื่องสลิปความร้อนภาษาไทยที่ตัวเลขมักเพี้ยนได้ชัดเจน
+
+ขั้นตอน: GCP console → เปิดใช้ **Cloud Vision API** ใน project → APIs & Services →
+Credentials → Create API key → (แนะนำ) กด Restrict key ให้เรียกได้เฉพาะ Cloud Vision API
+
+**ปล่อยว่างไว้ก็ได้** แอปทำงานครบทุกอย่างเหมือนเดิม แค่ข้ามขั้น OCR ไป
 
 ค่าอื่นในไฟล์ใช้ค่า default ได้เลย ไม่ต้องแก้
 
@@ -117,7 +129,7 @@ curl -s http://localhost:8000/api/health
 ต้องได้แบบนี้ — **`ai_configured` ต้องเป็น `true`** ถ้าเป็น `false` แปลว่า key ยังไม่เข้า
 
 ```json
-{"status":"ok","vision_model":"gemini-2.5-flash","ai_configured":true}
+{"status":"ok","vision_model":"gemini-2.5-flash","ai_configured":true,"ocr_configured":true}
 ```
 
 | เปิดที่ไหน | URL |
@@ -151,9 +163,27 @@ ipconfig getifaddr en0        # macOS
 CORS_ORIGINS=http://localhost:3000,http://192.168.1.50:3000
 ```
 
-แล้วสั่ง `docker compose up -d api` (ไม่ใช่ `restart` — ดูหัวข้อถัดไป)
+**และต้องแก้ `VITE_API_BASE` ใน `docker-compose.yml` ด้วย** ไม่งั้นหน้าเว็บเปิดได้แต่ยิง API ไม่เจอ
+
+```yaml
+  web:
+    environment:
+      VITE_API_BASE: http://192.168.1.50:8000    # IP ของเครื่อง ไม่ใช่ localhost
+```
+
+> โค้ดฝั่ง frontend ทำงานใน browser ของ **ผู้ใช้** ไม่ใช่ในเครื่องเรา — พอเปิดจากมือถือ
+> คำว่า `localhost:8000` จึงหมายถึง "พอร์ต 8000 ของมือถือเครื่องนั้น" ซึ่งไม่มีอะไรรันอยู่
+> ค่า IP นี้ใช้ได้ทั้งตอนเปิดจากเครื่องตัวเองและจากมือถือ จึงตั้งค้างไว้ได้เลย
+
+แล้วสั่ง `docker compose up -d api web` (ไม่ใช่ `restart` — ดูหัวข้อถัดไป)
 
 เปิด `http://<IP>:3000` จากมือถือที่อยู่ Wi-Fi เดียวกัน แล้ว "Add to Home Screen" เพื่อใช้แบบแอป — ปุ่มถ่ายรูปจะเรียกกล้องหลังให้เลย
+
+> ไม่ต้องมี HTTPS — ปุ่มถ่ายรูปใช้ `<input type="file" capture>` ซึ่งเป็นการเปิดแอปกล้อง
+> ของเครื่อง (ต่างจาก `getUserMedia` ที่บังคับ HTTPS) จึงทำงานบน `http://` ใน LAN ได้ปกติ
+
+> ⚠️ IP ที่ router แจกมักเปลี่ยนเมื่อเปลี่ยน Wi-Fi หรือรีสตาร์ตเราเตอร์ — ถ้าอยู่ๆ มือถือ
+> ใช้ไม่ได้ ให้เช็ค `ipconfig getifaddr en0` ใหม่แล้วแก้ทั้งสองที่ให้ตรงกัน
 
 ---
 
@@ -195,6 +225,9 @@ docker compose ps             # ดูสถานะ
 | อัปโหลดใบเสร็จแล้วขึ้น 401 | token หมดอายุ — refresh หน้าเว็บแล้วล็อกอินใหม่ |
 | สมัครแล้วขึ้น `อีเมลนี้ถูกใช้ไปแล้ว` | มีบัญชีอยู่แล้ว (อีเมลไม่แยกตัวพิมพ์เล็ก-ใหญ่) — กด "เข้าสู่ระบบ" แทน |
 | `ai_configured: false` | key ยังไม่เข้า — เช็คว่าเติม `KKU_API_KEY` แล้วสั่ง `docker compose up -d api` |
+| `ocr_configured: false` | ยังไม่ได้เติม `GOOGLE_VISION_API_KEY` — ไม่ใช่ปัญหา แอปใช้ได้ปกติ แค่ข้ามขั้น OCR (ดูข้อ 3) |
+| ตั้ง key แล้วแต่ log ขึ้น `Cloud Vision ตอบ HTTP 403` | ยังไม่ได้เปิด Cloud Vision API ใน GCP project หรือ key ถูก restrict ไว้ผิดตัว |
+| log ขึ้น `Cloud Vision ตอบ HTTP 429` | โควตาหมด (ฟรี 1,000 ครั้ง/เดือน) — ระบบข้าม OCR ให้เอง ยังกดปุ่ม ✨ ได้ตามปกติ |
 | กดปุ่ม ✨ แล้วขึ้น error 502 | โมเดลอาจไม่รับรูป — เปลี่ยน `KKU_VISION_MODEL` ใน `backend/.env` **อย่าแก้โค้ด** (ดูข้อ 10) |
 | หน้าเว็บเปิดได้แต่บันทึกไม่ได้ | CORS — เพิ่ม URL ที่เปิดอยู่เข้า `CORS_ORIGINS` (ดูข้อ 6) |
 | `port is already allocated` | มีอะไรใช้พอร์ต 3000/8000 อยู่ — ปิดตัวนั้น หรือแก้พอร์ตใน `docker-compose.yml` |

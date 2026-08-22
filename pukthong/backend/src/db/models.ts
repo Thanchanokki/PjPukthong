@@ -44,8 +44,18 @@ export interface ReceiptDoc {
   status: string;
   blurScore: number | null;
   rawPayload: Record<string, unknown> | null;
+  /**
+   * ข้อความทั้งใบ — มาจาก Cloud Vision ถ้า OCR ทำงาน ไม่งั้นมาจากที่ AI ถอดเอง
+   *
+   * ของ OCR เชื่อถือได้กว่าเพราะเป็นตัวอักษรที่อ่านจากพิกเซลจริง ไม่ใช่สิ่งที่โมเดล
+   * "จำได้ว่าเห็น" — receipts.service จึงเขียนทับด้วยของ OCR เสมอเมื่อมี
+   */
   rawText: string | null;
   aiModel: string | null;
+  /** ข้อความดิบจาก Cloud Vision — เก็บแยกไว้เพื่อไม่ให้ปนกับผลของ AI ตอน debug */
+  ocrText: string | null;
+  /** ความมั่นใจเฉลี่ยของ OCR 0–1 (null = ไม่ได้ทำ OCR หรือทำแล้วไม่รู้คะแนน) */
+  ocrQuality: number | null;
   createdAt: Date;
 }
 
@@ -57,6 +67,13 @@ export interface TransactionItemDoc {
   amount: string | null;
   /** ตัวอักษรกำกับราคาบนใบเสร็จ (เช่น N) — prompt สั่งห้ามตัดทิ้ง */
   flag: string | null;
+  /**
+   * หมวดค่าใช้จ่ายของของชิ้นนี้ (ดู shared/categories.ts) — null = ยังไม่ได้จัดหมวด
+   *
+   * เก็บที่ระดับรายการ ไม่ใช่ระดับใบเสร็จ เพราะใบเดียวมักมีของหลายหมวดปนกัน
+   * (7-11 ใบเดียวมีทั้งนมและแชมพู) — dashboard จึงสรุปว่าเงินไปกับอะไรได้จริง
+   */
+  category: string | null;
 }
 
 export interface TransactionDoc {
@@ -64,16 +81,37 @@ export interface TransactionDoc {
   /** เจ้าของ = UserDoc._id — ทุก query ต้องกรองด้วยฟิลด์นี้ ไม่งั้นข้อมูลข้ามคน */
   userId: string;
   receiptId: string | null;
-  /** income | expense */
+  /**
+   * income | expense — ตอนนี้เขียนเป็น "expense" เสมอ เพราะระบบรายรับถูกตัดออกไปก่อน
+   *
+   * ไม่ลบฟิลด์ทิ้งเพราะข้อมูลเดิมยังมีค่านี้อยู่ และถ้าวันหลังเอารายรับกลับมา
+   * จะได้ไม่ต้อง migrate ทั้ง collection — API ไม่รับค่านี้จากผู้ใช้แล้ว
+   */
   direction: string;
   merchantName: string | null;
   branch: string | null;
   merchantTaxId: string | null;
   docNumber: string | null;
-  /** 'YYYY-MM-DD' */
-  occurredOn: string;
-  /** 'HH:MM:SS' */
-  occurredAtTime: string | null;
+  /**
+   * วันที่บนใบเสร็จ 'YYYY-MM-DD' — เวลาที่เหตุการณ์จริงเกิดขึ้น
+   *
+   * ใช้ทำรายงาน สรุปยอดรายเดือน เคลมภาษี เช็คระยะประกัน — ทุกอย่างที่ตอบคำถามว่า
+   * "เงินก้อนนี้ถูกใช้ไปเมื่อไหร่" ห้ามเอา uploadedAt มาใช้แทนเด็ดขาด เพราะถ่ายใบเก่า
+   * เมื่อไหร่ยอดจะไปโผล่ผิดเดือนทันที
+   */
+  purchasedAt: string;
+  /** เวลาบนใบเสร็จ 'HH:MM:SS' (ถ้าใบนั้นพิมพ์มา) */
+  purchasedTime: string | null;
+  /**
+   * เวลาที่ระบบรับรู้รายการนี้ — ใบที่สแกนใช้เวลาที่ "อัปโหลดรูป" ไม่ใช่เวลาที่กดบันทึก
+   * ส่วนรายการที่กรอกเองใช้เวลาที่กดบันทึก
+   *
+   * ใช้เรียงลำดับใน feed, sync, audit, debug, กู้ข้อมูล — ทุกอย่างที่ตอบคำถามว่า
+   * "ระบบรู้เรื่องนี้เมื่อไหร่" ไม่เกี่ยวกับยอดเงินรายเดือนเลย
+   *
+   * ไม่เปลี่ยนตอนแก้ไขรายการ (นั่นคือหน้าที่ของ updatedAt)
+   */
+  uploadedAt: Date;
   currency: string;
   subtotal: string | null;
   discount: string | null;

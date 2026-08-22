@@ -45,6 +45,9 @@ export default async function receiptsController(app: FastifyInstance) {
       duplicate: result.duplicate,
       blurry: result.blurry,
       blur_score: result.blurScore,
+      has_ocr: result.hasOcr,
+      ocr_quality: result.ocrQuality,
+      ocr_low_quality: result.ocrLowQuality,
       image_url: `/api/receipts/${result.receiptId}/image`,
     });
   });

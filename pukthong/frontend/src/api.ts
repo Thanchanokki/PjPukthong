@@ -1,6 +1,20 @@
 // ทุก request วิ่งผ่าน backend ของเราเสมอ — frontend ไม่เคยถือ KKU_API_KEY
 
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+/**
+ * ที่อยู่ backend — เดาจาก host ที่ browser เปิดอยู่ ถ้าไม่ได้ตั้ง VITE_API_BASE ไว้
+ *
+ * ห้าม fallback เป็น "localhost" เด็ดขาด: โค้ดนี้ทำงานใน browser ของผู้ใช้ พอเปิด
+ * จากมือถือ localhost จะหมายถึงตัวมือถือเอง แล้วยิง API ไม่เจอทั้งแอป
+ *
+ * ใช้ hostname ที่เปิดอยู่แทน จึงถูกเสมอทั้งตอนเปิด localhost:3000 บนเครื่อง และตอน
+ * เปิด 192.168.x.x:3000 จากมือถือ — และไม่พังอีกเมื่อเราเตอร์แจก IP ใหม่ให้เครื่อง
+ */
+const guessApiBase = () => {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
+};
+
+export const API_BASE = import.meta.env.VITE_API_BASE || guessApiBase();
 
 /**
  * JWT เก็บใน localStorage เพื่อให้ยังล็อกอินค้างหลังปิดแท็บ
@@ -35,7 +49,10 @@ export type LineItem = {
   unit_price: string | null;
   amount: string | null;
   flag: string | null;
+  /** หมวดที่ AI เดาให้ตอนสแกน — เป็นค่าตั้งต้นของ category */
   category_guess?: string | null;
+  /** หมวดที่ผู้ใช้ยืนยัน — ตัวนี้เท่านั้นที่ถูกบันทึกและใช้สรุปใน dashboard */
+  category?: string | null;
 };
 
 export type ReceiptDraft = {
@@ -70,7 +87,30 @@ export type UploadResult = {
   duplicate: boolean;
   blurry: boolean;
   blur_score: number | null;
+  /** false = ไม่ได้ทำ OCR (ปิดไว้ใน .env หรือ Cloud Vision เรียกไม่สำเร็จ) */
+  has_ocr: boolean;
+  /** ความมั่นใจเฉลี่ยของ OCR 0–1 — null คือไม่รู้ ไม่ใช่ศูนย์ */
+  ocr_quality: number | null;
+  ocr_low_quality: boolean;
   image_url: string;
+};
+
+export type ScanCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "fail" | "unknown";
+  weight: number;
+  detail: string;
+};
+
+/**
+ * ความน่าเชื่อถือของผลสแกน — ไม่ใช่ "ความแม่นยำ" (วัดไม่ได้เพราะไม่มีเฉลยมาเทียบ)
+ * คิดจากหลักฐานที่ตรวจสอบได้จริง ดู backend/src/modules/receipts/confidence.ts
+ */
+export type ScanConfidence = {
+  score: number | null;
+  level: "high" | "medium" | "low" | "unknown";
+  checks: ScanCheck[];
 };
 
 export type ExtractResult = {
@@ -78,18 +118,21 @@ export type ExtractResult = {
   draft: ReceiptDraft;
   warnings: string[];
   ai_model: string;
+  scan_confidence: ScanConfidence;
 };
 
 export type Transaction = {
   id: string;
   receipt_id: string | null;
-  direction: "income" | "expense";
+  /** เหลือไว้เพื่อความเข้ากันได้ — ตอนนี้เป็น "expense" เสมอ (ระบบรายรับถูกตัดออก) */
+  direction: string;
   merchant_name: string | null;
   branch: string | null;
   merchant_tax_id: string | null;
   doc_number: string | null;
-  occurred_on: string;
-  occurred_at_time: string | null;
+  /** วันที่บนใบเสร็จ 'YYYY-MM-DD' — ใช้สรุปยอดรายเดือน เคลมภาษี เช็คระยะประกัน */
+  purchased_at: string;
+  purchased_time: string | null;
   currency: string;
   subtotal: string | null;
   discount: string | null;
@@ -102,16 +145,24 @@ export type Transaction = {
   payment_channel: string | null;
   note: string | null;
   verified_by_user: boolean;
+  /** เวลาที่สแกนเข้าระบบ (ISO) — ใช้เรียง feed, audit, debug ไม่เกี่ยวกับยอดรายเดือน */
+  uploaded_at: string;
   created_at: string;
   items: (LineItem & { id: number; line_no: number | null })[];
 };
 
 export type Monthly = {
   month: string;
-  income_total: string;
+  /** แกนเวลาที่ใช้กรองเดือนนี้ — สะท้อนกลับมาให้ UI ตั้งป้ายให้ตรงความหมาย */
+  axis: DateAxis;
   expense_total: string;
-  net: string;
-  by_category: { category: string | null; total: string; count: number }[];
+  transaction_count: number;
+  /**
+   * ยอดต่อหมวด เรียงจากมากไปน้อย — สรุปจากหมวด "รายชิ้น" ไม่ใช่หมวดของทั้งใบ
+   * count คือจำนวนชิ้นของในหมวดนั้น ผลรวม total ทุกหมวด = expense_total เสมอ
+   */
+  by_category: { category: string; total: string; count: number }[];
+  by_day: { date: string; total: string }[];
   transactions: Transaction[];
 };
 
@@ -194,11 +245,34 @@ export async function deleteTransaction(id: string): Promise<void> {
   );
 }
 
-export async function fetchMonthly(month: string): Promise<Monthly> {
+export type MonthWithData = { month: string; count: number; total: string };
+
+/** เดือนที่มีข้อมูลอยู่จริงตามแกนที่เลือก — ใช้บอกผู้ใช้ตอนเดือนที่เปิดอยู่ว่างเปล่า */
+export async function fetchMonths(
+  axis: DateAxis = "purchased",
+): Promise<MonthWithData[]> {
   return handle(
-    await fetch(`${API_BASE}/api/transactions?month=${encodeURIComponent(month)}`, {
+    await fetch(`${API_BASE}/api/transactions/months?by=${axis}`, {
       headers: authHeaders(),
     }),
+  );
+}
+
+/**
+ * axis กำหนดว่า "เดือน" หมายถึงเดือนอะไร — เปลี่ยนทั้งชุดข้อมูลที่ได้ ไม่ใช่แค่ลำดับ
+ *
+ * purchased = เดือนที่ซื้อของ (มุมมองการเงิน)
+ * uploaded  = เดือนที่สแกนเข้าระบบ (มุมมอง feed/audit)
+ */
+export type DateAxis = "purchased" | "uploaded";
+
+export async function fetchMonthly(
+  month: string,
+  axis: DateAxis = "purchased",
+): Promise<Monthly> {
+  const q = `month=${encodeURIComponent(month)}&by=${axis}`;
+  return handle(
+    await fetch(`${API_BASE}/api/transactions?${q}`, { headers: authHeaders() }),
   );
 }
 

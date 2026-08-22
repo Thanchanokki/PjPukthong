@@ -10,8 +10,10 @@ import { receipts } from "../../db/client.js";
 import type { ReceiptDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
 import * as ai from "./ai.provider.js";
+import { scanConfidence } from "./confidence.js";
 import * as quality from "./image.quality.js";
 import * as storage from "./image.storage.js";
+import * as ocr from "./ocr.provider.js";
 import { enrich } from "./receipts.enrich.js";
 import { emptyDraft, parseDraft } from "./receipts.schema.js";
 import { blurOut } from "./receipts.serializer.js";
@@ -28,12 +30,20 @@ export interface UploadResult {
   duplicate: boolean;
   blurry: boolean;
   blurScore: number | null;
+  /** null = ไม่ได้ทำ OCR (ปิดไว้ หรือเรียกไม่สำเร็จ) */
+  ocrQuality: number | null;
+  ocrLowQuality: boolean;
+  hasOcr: boolean;
 }
 
 /**
  * เก็บรูปใบเสร็จลงระบบ
  *
  * ยังไม่เรียก AI ตรงนี้ เพื่อให้เตือนเรื่องภาพเบลอได้ก่อนที่จะเสียค่าเรียก API
+ *
+ * แต่ "ทำ OCR" ตรงนี้เลย เพราะ Cloud Vision ถูกและเร็วกว่า AI มาก และผลของมัน
+ * ถูกใช้ทั้งตอนกด ✨ (ส่งไปคู่กับรูป) และตอนเตือนว่าภาพอ่านยาก จึงคุ้มที่จะทำล่วงหน้า
+ * ทุกใบ — ผลถูกเก็บลง DB จึงไม่ถูกเรียกซ้ำแม้ผู้ใช้กด "อ่านซ้ำ" หลายรอบ
  */
 export async function createFromImage(
   userId: string,
@@ -59,10 +69,18 @@ export async function createFromImage(
       duplicate: true,
       blurry: quality.isBlurry(score),
       blurScore: score,
+      // ใช้ผล OCR ที่เก็บไว้รอบก่อน ไม่ยิง Cloud Vision ซ้ำให้เสียเงินฟรี
+      ocrQuality: existing.ocrQuality ?? null,
+      ocrLowQuality: ocr.isLowQuality(existing.ocrQuality ?? null),
+      hasOcr: Boolean(existing.ocrText),
     };
   }
 
-  const score = await quality.blurScore(jpeg);
+  // ทำขนานกัน — ทั้งคู่ไม่ขึ้นต่อกันและ OCR เป็นตัวที่ช้าที่สุดในขั้นตอนนี้
+  const [score, ocrResult] = await Promise.all([
+    quality.blurScore(jpeg),
+    ocr.readText(jpeg),
+  ]);
   const storageKey = await storage.save(jpeg, fileHash);
 
   const row: ReceiptDoc = {
@@ -74,8 +92,11 @@ export async function createFromImage(
     // เดิมคอลัมน์เป็น NUMERIC(10,3) ฐานข้อมูลปัดให้เอง — Mongo ไม่ปัด จึงปัดตรงนี้
     blurScore: score === null ? null : Math.round(score * 1000) / 1000,
     rawPayload: null,
-    rawText: null,
+    // ข้อความจาก OCR ใช้ได้ทันทีตั้งแต่อัปโหลด ไม่ต้องรอให้ AI อ่าน
+    rawText: ocrResult.text,
     aiModel: null,
+    ocrText: ocrResult.text,
+    ocrQuality: roundQuality(ocrResult.quality),
     createdAt: new Date(),
   };
   await receipts.insertOne(row);
@@ -85,18 +106,26 @@ export async function createFromImage(
     duplicate: false,
     blurry: quality.isBlurry(score),
     blurScore: score,
+    ocrQuality: row.ocrQuality,
+    ocrLowQuality: ocr.isLowQuality(ocrResult.quality),
+    hasOcr: ocrResult.text !== null,
   };
 }
+
+/** เก็บทศนิยม 3 ตำแหน่งพอ — เป็นค่าคุณภาพ ไม่ใช่เงิน จึงเป็น number ได้ */
+const roundQuality = (v: number | null) =>
+  v === null ? null : Math.round(v * 1000) / 1000;
 
 /** ปุ่ม ✨ ให้ AI อ่านให้ — เรียกซ้ำได้ถ้าผลรอบแรกไม่ดี */
 export async function extract(userId: string, receiptId: string) {
   const receipt = await findOwned(receiptId, userId);
   const jpeg = await loadImage(receipt);
+  const ocrText = await ensureOcr(receipt, jpeg);
 
   let payload: Record<string, unknown> | null;
   let model: string;
   try {
-    ({ payload, model } = await ai.extractReceipt(jpeg));
+    ({ payload, model } = await ai.extractReceipt(jpeg, ocrText));
   } catch (err) {
     if (err instanceof ai.AIUnavailable) {
       await receipts.updateOne({ _id: receiptId }, { $set: { status: "failed" } });
@@ -114,24 +143,70 @@ export async function extract(userId: string, receiptId: string) {
       { _id: receiptId },
       { $set: { status: "failed", aiModel: model } },
     );
-    return { receipt_id: receiptId, draft, warnings: draft.warnings, ai_model: model };
+    return {
+      receipt_id: receiptId,
+      draft,
+      warnings: draft.warnings,
+      ai_model: model,
+      scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
+    };
   }
 
-  const draft = enrich(parseDraft(payload));
+  // เทียบกับเวลาที่อัปโหลดรูป ไม่ใช่เวลาที่กดปุ่ม ✨ (อาจกดทีหลังเป็นวันๆ)
+  const draft = enrich(parseDraft(payload), receipt.createdAt);
 
   await receipts.updateOne(
     { _id: receiptId },
     {
       $set: {
         rawPayload: payload,
-        rawText: draft.raw_text,
+        // ข้อความของ OCR มาจากพิกเซลจริง จึงเชื่อถือได้กว่าที่โมเดลถอดเอง — ใช้ก่อนเสมอ
+        rawText: ocrText ?? draft.raw_text,
         aiModel: model,
         status: "extracted",
       },
     },
   );
 
-  return { receipt_id: receiptId, draft, warnings: draft.warnings, ai_model: model };
+  return {
+    receipt_id: receiptId,
+    draft,
+    warnings: draft.warnings,
+    ai_model: model,
+    /**
+     * คิดหลัง enrich เพื่อให้ใช้ค่าชุดเดียวกับที่ผู้ใช้เห็นในฟอร์มเป๊ะๆ
+     * (ถ้าคิดก่อน ตัวเลขที่โชว์กับตัวเลขที่ให้คะแนนอาจเป็นคนละชุด)
+     */
+    scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
+  };
+}
+
+/**
+ * คืนข้อความ OCR ของใบเสร็จ — ทำ OCR ให้ถ้ายังไม่เคยมี
+ *
+ * จำเป็นเพราะใบเสร็จที่อัปโหลดไว้ "ก่อน" เปิดใช้ Cloud Vision (หรือตอนที่ Vision ล่ม)
+ * จะไม่มี ocrText ติดมาด้วย — ถ้าไม่เติมให้ตรงนี้ ใบเก่าจะไม่ได้ประโยชน์จาก OCR เลย
+ * ผลถูกเขียนกลับลง DB จึงเกิดขึ้นครั้งเดียวต่อใบ ไม่ใช่ทุกครั้งที่กด "อ่านซ้ำ"
+ */
+async function ensureOcr(receipt: ReceiptDoc, jpeg: Buffer): Promise<string | null> {
+  if (receipt.ocrText) return receipt.ocrText;
+  if (!ocr.isEnabled()) return null;
+
+  const result = await ocr.readText(jpeg);
+  if (result.text === null) return null;
+
+  await receipts.updateOne(
+    { _id: receipt._id },
+    {
+      $set: {
+        ocrText: result.text,
+        ocrQuality: roundQuality(result.quality),
+        // ใบเก่ายังไม่เคยมี rawText ที่เชื่อถือได้ — เติมให้ด้วยเลย
+        rawText: result.text,
+      },
+    },
+  );
+  return result.text;
 }
 
 /** อ่านไฟล์รูปของใบเสร็จที่เป็นของผู้ใช้คนนี้ */

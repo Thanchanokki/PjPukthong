@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { Transaction, baht, deleteTransaction, fetchMonthly } from "../api";
+import {
+  type DateAxis,
+  Transaction,
+  baht,
+  deleteTransaction,
+  fetchMonthly,
+} from "../api";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -9,10 +16,15 @@ export default function MonthlyPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? thisMonth();
   const qc = useQueryClient();
+  /**
+   * แกนเวลาที่ใช้ตีความคำว่า "เดือนนี้" — ดู db/models.ts ฝั่ง backend
+   * เปลี่ยนแล้วได้คนละชุดข้อมูล ไม่ใช่แค่คนละลำดับ
+   */
+  const [axis, setAxis] = useState<DateAxis>("purchased");
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ["monthly", month],
-    queryFn: () => fetchMonthly(month),
+    queryKey: ["monthly", month, axis],
+    queryFn: () => fetchMonthly(month, axis),
   });
 
   const remove = useMutation({
@@ -22,13 +34,34 @@ export default function MonthlyPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <input
           type="month"
           value={month}
           onChange={(e) => setParams({ month: e.target.value })}
           className="field w-44"
         />
+        <div className="flex items-center gap-1 text-xs">
+          <span className="text-slate-400">ดูตาม</span>
+          {(
+            [
+              ["purchased", "เดือนที่ซื้อ"],
+              ["uploaded", "เดือนที่สแกน"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setAxis(key)}
+              className={`rounded-lg px-2.5 py-1 font-medium ${
+                axis === key
+                  ? "bg-teal-700 text-white"
+                  : "border border-slate-300 bg-white text-slate-600"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isPending && <p className="text-sm text-slate-500">กำลังโหลด…</p>}
@@ -40,47 +73,21 @@ export default function MonthlyPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-3 gap-3">
-            <Stat label="รายรับ" value={data.income_total} tone="text-emerald-700" />
-            <Stat label="รายจ่าย" value={data.expense_total} tone="text-rose-700" />
+          <div className="grid grid-cols-2 gap-3">
             <Stat
-              label="คงเหลือ"
-              value={data.net}
-              tone={Number(data.net) < 0 ? "text-rose-700" : "text-slate-900"}
+              label={
+                data.axis === "uploaded" ? "ยอดรวมของใบที่สแกนเดือนนี้" : "รายจ่ายรวม"
+              }
+              value={`฿${baht(data.expense_total)}`}
             />
+            <Stat label="จำนวนรายการ" value={`${data.transaction_count}`} />
           </div>
 
-          {data.by_category.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h2 className="mb-3 text-sm font-medium">รายจ่ายตามหมวด</h2>
-              <ul className="space-y-2">
-                {data.by_category.map((c) => {
-                  const pct =
-                    Number(data.expense_total) > 0
-                      ? (Number(c.total) / Number(data.expense_total)) * 100
-                      : 0;
-                  return (
-                    <li key={c.category ?? "_"} className="text-sm">
-                      <div className="mb-1 flex justify-between">
-                        <span>
-                          {c.category ?? "ไม่ระบุหมวด"}{" "}
-                          <span className="text-xs text-slate-400">
-                            ({c.count})
-                          </span>
-                        </span>
-                        <span className="tabular-nums">฿{baht(c.total)}</span>
-                      </div>
-                      <div className="h-1.5 w-full rounded bg-slate-100">
-                        <div
-                          className="h-1.5 rounded bg-teal-600"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+          {data.axis === "uploaded" && (
+            <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-500">
+              กำลังดูตาม<b>เดือนที่สแกนเข้าระบบ</b> — ยอดนี้รวมใบที่ซื้อมาจากเดือนอื่นด้วย
+              จึงไม่ใช่ค่าใช้จ่ายของเดือนนี้ ถ้าต้องการยอดรายเดือนจริงให้กด "เดือนที่ซื้อ"
+            </p>
           )}
 
           <div className="rounded-xl border border-slate-200 bg-white">
@@ -111,21 +118,11 @@ export default function MonthlyPage() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: string;
-}) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className={`mt-1 text-xl font-semibold tabular-nums ${tone}`}>
-        ฿{baht(value)}
-      </p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
@@ -138,18 +135,20 @@ function Row({ tx, onDelete }: { tx: Transaction; onDelete: () => void }) {
           {tx.merchant_name ?? "(ไม่ระบุร้าน)"}
         </p>
         <p className="text-xs text-slate-500">
-          {tx.occurred_on}
-          {tx.category && ` · ${tx.category}`}
+          ซื้อ {tx.purchased_at}
           {tx.payment_method && ` · ${tx.payment_method}`}
           {tx.items.length > 0 && ` · ${tx.items.length} รายการ`}
         </p>
+        {/* เวลาที่ระบบรับรู้ — แสดงเฉพาะเมื่อต่างจากวันที่ซื้อ เพื่อไม่ให้รก
+            และช่วยให้เห็นทันทีว่าใบไหนถ่ายย้อนหลัง (หรือ AI อ่านปีผิด) */}
+        {tx.uploaded_at.slice(0, 10) !== tx.purchased_at && (
+          <p className="text-xs text-slate-400">
+            สแกนเข้าระบบ {tx.uploaded_at.slice(0, 10)}
+          </p>
+        )}
       </div>
-      <span
-        className={`tabular-nums font-medium ${
-          tx.direction === "income" ? "text-emerald-700" : "text-slate-900"
-        }`}
-      >
-        {tx.direction === "income" ? "+" : "−"}฿{baht(tx.total)}
+      <span className="tabular-nums font-medium text-slate-900">
+        ฿{baht(tx.total)}
       </span>
       {tx.receipt_id && (
         <a

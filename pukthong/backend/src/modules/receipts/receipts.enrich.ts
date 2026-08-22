@@ -11,8 +11,30 @@ const TOLERANCE = new Decimal(1); // คลาดเคลื่อนได้ 
 
 const or0 = (v: string | null): Decimal => dec(v) ?? ZERO;
 
-export function enrich(d: ReceiptDraft): ReceiptDraft {
+/** ห่างกันเกินเท่านี้ถือว่าน่าสงสัย — ถ่ายใบเก่าเก็บตกยังปกติ แต่ข้ามปีมักคืออ่านปีผิด */
+const DATE_GAP_WARN_DAYS = 120;
+
+export function enrich(d: ReceiptDraft, uploadedAt: Date = new Date()): ReceiptDraft {
   const warnings = [...d.warnings];
+
+  /**
+   * วันที่บนใบห่างจากวันที่สแกนมากผิดปกติ = สัญญาณว่า AI อ่านปีผิด
+   *
+   * จับตรงนี้สำคัญมาก เพราะยอดจะไปโผล่ผิดเดือนแล้วดูเหมือนข้อมูลหาย โดยที่ทุกอย่าง
+   * "ดูถูกต้อง" ทั้งใบ — ผู้ใช้จะไม่มีทางเอะใจถ้าไม่มีใครบอก
+   */
+  if (d.issued_at) {
+    const issued = new Date(`${d.issued_at}T00:00:00Z`);
+    const days = (uploadedAt.getTime() - issued.getTime()) / 86_400_000;
+    if (days > DATE_GAP_WARN_DAYS) {
+      warnings.push(
+        `วันที่บนใบ (${d.issued_at}) เก่ากว่าวันที่สแกน ${Math.round(days)} วัน — ` +
+          `ตรวจว่าอ่านปีถูกไหม ไม่งั้นยอดจะไปอยู่ผิดเดือน`,
+      );
+    } else if (days < -1) {
+      warnings.push(`วันที่บนใบ (${d.issued_at}) เป็นวันในอนาคต — ตรวจสอบอีกครั้ง`);
+    }
+  }
 
   if (d.merchant_tax_id && d.merchant_tax_id.replace(/\D/g, "").length !== 13) {
     warnings.push("เลขผู้เสียภาษีไม่ครบ 13 หลัก — ตรวจสอบอีกครั้ง");

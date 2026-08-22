@@ -5,41 +5,43 @@
  */
 import type { LineItem, ReceiptDraft } from "../api";
 
+/**
+ * ไม่มีหมวดระดับใบเสร็จแล้ว — หมวดอยู่ที่ "ของแต่ละชิ้น" ที่เดียว
+ *
+ * มีสองที่พร้อมกันแล้วสับสน (ใบที่มีทั้งนมและแชมพูจะให้ตอบว่าทั้งใบคือหมวดอะไร?)
+ * และ dashboard ก็สรุปจากหมวดรายชิ้นอยู่แล้ว ฟิลด์ระดับใบจึงไม่เคยถูกใช้จริง
+ */
 export type Form = {
-  direction: "income" | "expense";
   merchant_name: string;
   branch: string;
   merchant_tax_id: string;
   doc_number: string;
-  occurred_on: string;
-  occurred_at_time: string;
+  purchased_at: string;
+  purchased_time: string;
   subtotal: string;
   discount: string;
   service_charge: string;
   vat_rate: string;
   vat_amount: string;
   total: string;
-  category: string;
   payment_method: string;
   payment_channel: string;
   note: string;
 };
 
 export const EMPTY: Form = {
-  direction: "expense",
   merchant_name: "",
   branch: "",
   merchant_tax_id: "",
   doc_number: "",
-  occurred_on: "",
-  occurred_at_time: "",
+  purchased_at: "",
+  purchased_time: "",
   subtotal: "",
   discount: "",
   service_charge: "",
   vat_rate: "",
   vat_amount: "",
   total: "",
-  category: "",
   payment_method: "",
   payment_channel: "",
   note: "",
@@ -55,8 +57,8 @@ export function draftToForm(d: ReceiptDraft): Form {
     branch: s(d.branch),
     merchant_tax_id: s(d.merchant_tax_id),
     doc_number: s(d.doc_number),
-    occurred_on: s(d.issued_at),
-    occurred_at_time: d.issued_time ? d.issued_time.slice(0, 5) : "",
+    purchased_at: s(d.issued_at),
+    purchased_time: d.issued_time ? d.issued_time.slice(0, 5) : "",
     subtotal: s(d.subtotal),
     discount: s(d.discount),
     service_charge: s(d.service_charge),
@@ -78,16 +80,18 @@ export function today(): string {
 }
 
 export const emptyItem = (): LineItem => ({
-  qty: null,
+  // บรรทัดที่ผู้ใช้กดเพิ่มเองตั้งต้นที่ 1 ชิ้น (ไม่ใช่การเดาแทนใบเสร็จ — บรรทัดนี้ยังว่างอยู่)
+  qty: "",
   name: "",
   unit_price: null,
   amount: null,
   flag: null,
+  category: null,
 });
 
 /** ต้องมียอดรวมและวันที่ก่อนจึงจะบันทึกได้ (ตรงกับที่ backend บังคับ) */
 export const canSave = (form: Form) =>
-  form.total.trim() !== "" && form.occurred_on.trim() !== "";
+  form.total.trim() !== "" && form.purchased_at.trim() !== "";
 
 /** แปลงฟอร์มเป็น payload ของ POST /api/transactions */
 export function buildPayload(
@@ -97,20 +101,18 @@ export function buildPayload(
 ) {
   return {
     receipt_id: receiptId,
-    direction: form.direction,
     merchant_name: num(form.merchant_name),
     branch: num(form.branch),
     merchant_tax_id: num(form.merchant_tax_id),
     doc_number: num(form.doc_number),
-    occurred_on: form.occurred_on,
-    occurred_at_time: num(form.occurred_at_time),
+    purchased_at: form.purchased_at,
+    purchased_time: num(form.purchased_time),
     subtotal: num(form.subtotal),
     discount: num(form.discount),
     service_charge: num(form.service_charge),
     vat_rate: num(form.vat_rate),
     vat_amount: num(form.vat_amount),
     total: form.total,
-    category: num(form.category),
     payment_method: num(form.payment_method),
     payment_channel: num(form.payment_channel),
     note: num(form.note),
@@ -124,6 +126,8 @@ export function buildPayload(
         unit_price: it.unit_price,
         amount: it.amount,
         flag: it.flag,
+        // AI เดาหมวดมาให้ตอนสแกน (category_guess) ผู้ใช้แก้ได้ที่ category
+        category: it.category ?? it.category_guess ?? null,
       })),
   };
 }

@@ -8,7 +8,12 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 
-import { corsOriginList, maxUploadBytes, settings } from "./config/index.js";
+import {
+  LAN_ORIGIN_RE,
+  corsOriginList,
+  maxUploadBytes,
+  settings,
+} from "./config/index.js";
 import authController from "./modules/auth/auth.controller.js";
 import receiptsController from "./modules/receipts/receipts.controller.js";
 import transactionsController from "./modules/transactions/transactions.controller.js";
@@ -19,7 +24,17 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ไม่มี CORS = browser บล็อกทุก request จาก :3000 ไป :8000
   await app.register(cors, {
-    origin: corsOriginList,
+    /**
+     * รับเป็นฟังก์ชันแทน array เพื่อให้เปิดจากมือถือได้โดยไม่ต้องไล่แก้ IP ทุกครั้ง
+     * ที่เราเตอร์แจกเลขใหม่ (เปิดด้วย CORS_ALLOW_LAN=true เท่านั้น)
+     */
+    origin: (origin, cb) => {
+      // ไม่มี origin = curl / แอปมือถือ / same-origin — ไม่ใช่คำขอข้ามโดเมนจึงไม่ต้องกรอง
+      if (!origin) return cb(null, true);
+      if (corsOriginList.includes(origin)) return cb(null, true);
+      if (settings.corsAllowLan && LAN_ORIGIN_RE.test(origin)) return cb(null, true);
+      cb(null, false);
+    },
     credentials: false,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   });
@@ -73,6 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     status: "ok",
     vision_model: settings.kkuVisionModel,
     ai_configured: Boolean(settings.kkuApiKey),
+    ocr_configured: Boolean(settings.googleVisionApiKey),
   }));
 
   return app;

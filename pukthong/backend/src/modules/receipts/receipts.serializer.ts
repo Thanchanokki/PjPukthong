@@ -11,5 +11,9 @@ export function receiptRawOut(r: ReceiptDoc) {
     ai_model: r.aiModel,
     blur_score: blurOut(r.blurScore),
     raw_payload: r.rawPayload,
+    // ข้อความจาก OCR ไว้เทียบกับ raw_payload ตอนผลอ่านเพี้ยน — ดูออกทันทีว่า
+    // ปัญหาอยู่ที่ OCR อ่านตัวอักษรผิด หรือ AI ตีความข้อความที่ถูกต้องผิด
+    ocr_text: r.ocrText ?? null,
+    ocr_quality: r.ocrQuality ?? null,
   };
 }
