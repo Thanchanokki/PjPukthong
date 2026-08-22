@@ -18,6 +18,7 @@ export function itemOut(r: TransactionItemDoc, index: number) {
     unit_price: r.unitPrice,
     amount: r.amount,
     flag: r.flag,
+    category: r.category ?? null,
     id: index + 1,
   };
 }
@@ -31,8 +32,9 @@ export function transactionOut(r: TransactionDoc) {
     branch: r.branch,
     merchant_tax_id: r.merchantTaxId,
     doc_number: r.docNumber,
-    occurred_on: r.occurredOn,
-    occurred_at_time: r.occurredAtTime,
+    // สองนาฬิกาที่ห้ามสลับกัน — ดู db/models.ts
+    purchased_at: r.purchasedAt,
+    purchased_time: r.purchasedTime,
     currency: r.currency,
     subtotal: r.subtotal,
     discount: r.discount,
@@ -45,6 +47,8 @@ export function transactionOut(r: TransactionDoc) {
     payment_channel: r.paymentChannel,
     note: r.note,
     verified_by_user: r.verifiedByUser,
+    // ใบเก่าที่บันทึกไว้ก่อนมีฟิลด์นี้ ใช้เวลาที่สร้างเรคอร์ดแทน
+    uploaded_at: iso(r.uploadedAt ?? r.createdAt),
     created_at: iso(r.createdAt),
     items: (r.items ?? []).map(itemOut),
   };

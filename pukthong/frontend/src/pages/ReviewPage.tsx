@@ -10,11 +10,11 @@ import {
   imageUrl,
 } from "../api";
 import {
-  DirectionToggle,
   ItemsEditor,
   SaveBar,
   TransactionFields,
 } from "../components/FormFields";
+import { ScanConfidenceCard } from "../components/ScanConfidenceCard";
 import {
   EMPTY,
   type Form,
@@ -45,7 +45,8 @@ export default function ReviewPage() {
 
   const save = useMutation({
     mutationFn: () => createTransaction(buildPayload(form, items, receiptId)),
-    onSuccess: (tx) => navigate(`/monthly?month=${tx.occurred_on.slice(0, 7)}`),
+    onSuccess: (tx) => // บันทึกเสร็จแล้วพาไปหน้าสรุปทันที — ให้เห็นเลยว่ารายจ่ายก้อนนี้ไปอยู่หมวดไหน
+      navigate(`/dashboard?month=${tx.purchased_at.slice(0, 7)}`),
   });
 
   // มาจากปุ่ม ✨ บนหน้าถ่ายรูป -> ยิง extract ให้เลยครั้งเดียว
@@ -107,6 +108,10 @@ export default function ReviewPage() {
           <p className="mt-1 text-xs">กรอกข้อมูลเองด้านล่างได้ตามปกติ</p>
         </div>
       )}
+      {result?.scan_confidence && (
+        <ScanConfidenceCard conf={result.scan_confidence} />
+      )}
+
       {warnings.length > 0 && (
         <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="mb-1 font-medium">ตรวจสอบก่อนบันทึก</p>
@@ -124,16 +129,11 @@ export default function ReviewPage() {
         className={result ? "btn-ghost w-full" : "btn-primary w-full py-3"}
       >
         {extract.isPending
-          ? "กำลังอ่าน…"
+          ? "ระบบกำลังอ่านใบเสร็จ…"
           : result
-            ? "✨ ให้ AI อ่านซ้ำ"
-            : "✨ ให้ AI อ่านให้"}
+            ? "ระบบกำลังอ่านซ้ำ"
+            : "ระบบกำลังอ่านใบเสร็จ"}
       </button>
-
-      <DirectionToggle
-        value={form.direction}
-        onChange={(d) => setForm((f) => ({ ...f, direction: d }))}
-      />
 
       <TransactionFields form={form} onChange={set} warnSet={warnSet} />
 

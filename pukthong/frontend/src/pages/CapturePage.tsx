@@ -1,12 +1,54 @@
+/**
+ * หน้า "เพิ่มรายการใหม่" — ให้เลือกวิธีบันทึกใบเสร็จก่อน (ถ่ายภาพ / อัพโหลดจากคลัง /
+ * กรอกด้วยตนเอง) จากนั้นค่อยเข้าสู่ flow เดิม (พรีวิว -> อัปโหลด -> ผลลัพธ์)
+ *
+ * เดิมมี input เดียวที่ผูก capture="environment" ไว้ตายตัว ทำให้เลือกไม่ได้ว่าจะ
+ * ถ่ายจริงหรือหยิบจากคลังภาพ จึงแยกเป็นสอง input ซ่อนไว้ และเพิ่มทางลัด
+ * "กรอกด้วยตนเอง" ที่ข้ามการอัปโหลดไปเข้าฟอร์มเปล่าเลย
+ *
+ * "กรอกด้วยตนเอง" พาไปหน้า /manual (ManualPage.tsx) ที่ทำ flow กรอกเปล่าไว้แล้ว
+ * โดยเฉพาะ ไม่ผ่าน /review/:receiptId ซึ่งเป็นของโหมด OCR
+ */
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { UploadResult, uploadReceipt } from "../api";
+import { CameraIcon, PencilIcon, UploadIcon } from "../components/icons";
+
+/** การ์ดตัวเลือกวิธีบันทึกใบเสร็จ — ประกาศนอก component หลักตามธรรมเนียมเดียวกับ FormFields.tsx */
+function OptionCard({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-start gap-4 rounded-2xl border border-stamp/20 bg-white
+                 px-5 py-4 text-left shadow-sm transition hover:border-stamp hover:shadow-md"
+    >
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-stamp/10 text-stamp">
+        {icon}
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-base font-bold text-ink">{title}</span>
+        <span className="text-sm leading-snug text-ink/60">{description}</span>
+      </span>
+    </button>
+  );
+}
 
 export default function CapturePage() {
   const navigate = useNavigate();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
 
@@ -28,31 +70,63 @@ export default function CapturePage() {
     setPreview(null);
     setResult(null);
     upload.reset();
-    if (inputRef.current) inputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (galleryInputRef.current) galleryInputRef.current.value = "";
   }
+
+  // แสดงหน้าเลือกวิธีบันทึกตราบใดที่ยังไม่มีรูปและไม่ได้กำลังอัปโหลดอยู่
+  const showPicker = !preview && !upload.isPending;
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
+      {/* input จริงถูกซ่อนไว้ การ์ดด้านล่างเป็นตัวสั่งเปิด — ตัวแรกบังคับกล้อง
+          (capture="environment") ตัวที่สองเปิดคลังภาพปกติ */}
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         className="hidden"
         onChange={(e) => pick(e.target.files?.[0])}
       />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => pick(e.target.files?.[0])}
+      />
 
-      {!preview && (
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="flex h-64 w-full flex-col items-center justify-center gap-2 rounded-2xl
-                     border-2 border-dashed border-slate-300 bg-white text-slate-500
-                     hover:border-teal-500 hover:text-teal-700"
-        >
-          <span className="text-4xl">📷</span>
-          <span className="font-medium">ถ่ายรูป หรือเลือกรูปใบเสร็จ</span>
-          <span className="text-xs">JPEG, PNG, WebP, HEIC · ไม่เกิน 15 MB</span>
-        </button>
+      {showPicker && (
+        <div className="space-y-6">
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-bold text-ink">เพิ่มรายการใหม่</h1>
+            <p className="text-sm text-ink/60">
+              เลือกวิธีบันทึกใบเสร็จ ระบบจะอ่านข้อมูลให้อัตโนมัติด้วย OCR
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <OptionCard
+              icon={<CameraIcon className="h-6 w-6" />}
+              title="ถ่ายภาพใบเสร็จ"
+              description="เปิดกล้องถ่ายทันที เหมาะกับใบเสร็จที่เพิ่งได้รับ"
+              onClick={() => cameraInputRef.current?.click()}
+            />
+            <OptionCard
+              icon={<UploadIcon className="h-6 w-6" />}
+              title="อัพโหลดจากคลังภาพ"
+              description="เลือกรูปที่ถ่ายไว้แล้วจากเครื่อง"
+              onClick={() => galleryInputRef.current?.click()}
+            />
+            <OptionCard
+              icon={<PencilIcon className="h-6 w-6" />}
+              title="กรอกด้วยตนเอง"
+              description="สำหรับกรณีไม่มีใบเสร็จ หรือ OCR อ่านไม่ได้"
+              onClick={() => navigate("/manual")}
+            />
+          </div>
+        </div>
       )}
 
       {preview && (
@@ -88,6 +162,21 @@ export default function CapturePage() {
             <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
               ⚠️ ภาพดูเบลอ (คะแนนความคม {result.blur_score?.toFixed(0)}) — ถ่ายใหม่ให้ชัดขึ้น
               จะช่วยให้ AI อ่านแม่นกว่ามาก
+              <div className="mt-2">
+                <button onClick={reset} className="btn-ghost">
+                  ถ่ายใหม่
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ไม่ขึ้นซ้อนกับแบนเนอร์เบลอ — สองอันบอกเรื่องเดียวกันคือ "ภาพนี้อ่านยาก"
+              แต่ OCR วัดจากตัวอักษรจริงจึงจับกรณีที่ภาพคมแต่หมึกจาง/ใบยับได้ด้วย */}
+          {!result.blurry && result.ocr_low_quality && (
+            <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+              ⚠️ OCR อ่านตัวอักษรได้ไม่ค่อยชัด (
+              {Math.round((result.ocr_quality ?? 0) * 100)}%) — ใบเสร็จอาจหมึกจางหรือมีรอยยับ
+              ถ่ายใหม่ในที่สว่างขึ้นจะช่วยได้ แต่กดให้ AI อ่านต่อเลยก็ได้
               <div className="mt-2">
                 <button onClick={reset} className="btn-ghost">
                   ถ่ายใหม่

@@ -5,6 +5,10 @@ const int = (k: string, fallback: number) => {
   const n = Number(process.env[k]);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
+const bool = (k: string, fallback: boolean) => {
+  const v = process.env[k]?.trim().toLowerCase();
+  return v === undefined || v === "" ? fallback : v === "true" || v === "1";
+};
 const flt = (k: string, fallback: number) => {
   const n = Number(process.env[k]);
   return Number.isFinite(n) ? n : fallback;
@@ -30,6 +34,17 @@ export const settings = {
   kkuApiKey: str("KKU_API_KEY", ""),
   kkuVisionModel: str("KKU_VISION_MODEL", "gemini-2.5-flash"),
 
+  // Google Cloud Vision (OCR) — ว่างไว้ = ปิด OCR ทั้งระบบ แอปยังทำงานได้ปกติ
+  googleVisionApiKey: str("GOOGLE_VISION_API_KEY", ""),
+  googleVisionUrl: str(
+    "GOOGLE_VISION_URL",
+    "https://vision.googleapis.com/v1/images:annotate",
+  ),
+  /** ใบเสร็จไทยมีอังกฤษปนเสมอ (ชื่อแบรนด์ เลขที่เอกสาร) — บอกใบ้ทั้งสองภาษา */
+  ocrLanguageHints: str("OCR_LANGUAGE_HINTS", "th,en"),
+  /** ต่ำกว่านี้ถือว่า OCR อ่านได้ไม่ดี — ใช้เตือนผู้ใช้ ไม่ได้ใช้บล็อกอะไร */
+  ocrQualityThreshold: flt("OCR_QUALITY_THRESHOLD", 0.75),
+
   // Database (MongoDB)
   mongoUri: str("MONGODB_URI", DEFAULT_MONGO_URI),
   mongoDbName: str(
@@ -47,6 +62,13 @@ export const settings = {
   maxUploadMb: int("MAX_UPLOAD_MB", 15),
   uploadDir: str("UPLOAD_DIR", "/data/uploads"),
   corsOrigins: str("CORS_ORIGINS", "http://localhost:3000"),
+  /**
+   * true = ยอมรับ origin จากเครื่องในวง LAN ทุกตัว (10.x / 172.16-31.x / 192.168.x)
+   *
+   * มีไว้เพื่อทดสอบจากมือถือ เพราะเราเตอร์แจก IP ใหม่ให้เครื่องเรื่อยๆ แล้วต้องมาไล่แก้
+   * CORS_ORIGINS ทุกครั้ง — ห้ามเปิดตอนขึ้นเซิร์ฟเวอร์จริงที่ออกอินเทอร์เน็ต
+   */
+  corsAllowLan: bool("CORS_ALLOW_LAN", false),
   port: int("PORT", 8000),
 };
 
@@ -63,9 +85,21 @@ export function requireJwtSecret(): string {
   return settings.jwtSecret;
 }
 
+/**
+ * origin ของเครื่องในวงแลน — ยอมรับทุกพอร์ตเพราะ vite อาจเด้งพอร์ตเวลาชนกัน
+ * (ครอบคลุมช่วง private ตาม RFC1918 เท่านั้น ไม่รวม IP สาธารณะ)
+ */
+export const LAN_ORIGIN_RE =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d+)?$/;
+
 export const corsOriginList = settings.corsOrigins
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
 
 export const maxUploadBytes = settings.maxUploadMb * 1024 * 1024;
+
+export const ocrLanguageHintList = settings.ocrLanguageHints
+  .split(",")
+  .map((l) => l.trim())
+  .filter(Boolean);

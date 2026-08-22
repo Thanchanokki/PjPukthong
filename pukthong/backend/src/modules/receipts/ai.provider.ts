@@ -7,6 +7,7 @@
 import OpenAI from "openai";
 
 import { settings } from "../../config/index.js";
+import { promptList as categoryList } from "../../shared/categories.js";
 
 export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อมูลจากใบเสร็จ ใบกำกับภาษี และสลิปโอนเงินของไทย
 ตอบกลับเป็น JSON ที่ parse ได้เท่านั้น ห้ามมี markdown fence หรือคำอธิบายใดๆ
@@ -18,10 +19,21 @@ export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อ�
 - ถ้ามีเลขอ้างอิงที่ขึ้นต้นด้วยวันที่แบบ ค.ศ. (เช่น TID) ให้ใช้ไขว้ตรวจสอบวันที่ที่แปลงมา
 - document_type เลือกจาก: TAX_INVOICE_FULL | TAX_INVOICE_ABB | RECEIPT | TRANSFER_SLIP | OTHER
 - ถ้าราคามีตัวอักษรกำกับต่อท้าย (เช่น N) ให้เก็บไว้ในฟิลด์ flag ของรายการนั้น ห้ามตัดทิ้ง
+- category_guess: จัดหมวดค่าใช้จ่ายให้ของ "ทุกชิ้น" โดยเลือกจากรายการนี้เท่านั้น ห้ามคิดชื่อหมวดขึ้นมาเอง
+  ${categoryList}
+  ดูจากตัวสินค้าเป็นหลัก ไม่ใช่ประเภทร้าน — ซื้อแชมพูจากร้านสะดวกซื้อคือ "ของใช้ส่วนตัว" ไม่ใช่ "อาหาร"
+  ตัวอย่าง: นม/ขนมปัง/ข้าวกล่อง -> อาหาร | น้ำเปล่า/กาแฟ/น้ำอัดลม -> เครื่องดื่ม
+  น้ำยาล้างจาน/ทิชชู่/ถุงขยะ -> ของใช้ในบ้าน | ยาสีฟัน/แชมพู/ผ้าอนามัย -> ของใช้ส่วนตัว
+  ยา/วิตามิน/หน้ากากอนามัย -> สุขภาพและยา | น้ำมัน/ค่าโดยสาร/ค่าทางด่วน -> เดินทาง
+  ถ้าอ่านชื่อสินค้าไม่ออกหรือจัดหมวดไม่ได้จริงๆ ให้ใส่ "อื่นๆ" (ห้ามใส่ null ถ้ายังพออนุมานได้)
 - line_items: ถ้าอ่านได้แค่บางบรรทัด ให้ส่งเฉพาะบรรทัดที่มั่นใจ แล้วตั้ง line_items_complete = false ห้ามแต่งบรรทัดที่อ่านไม่ออกขึ้นมาเอง
-- raw_text: ถอดข้อความทั้งหมดที่เห็นตามลำดับบนใบเสมอ แม้จะจัดโครงสร้างไม่ได้
+- raw_text: ถอดข้อความทั้งหมดที่เห็นตามลำดับบนใบเสมอ แม้จะจัดโครงสร้างไม่ได้ (ถ้ามีข้อความจาก OCR ให้ส่ง null ระบบจะใช้ของ OCR แทน)
 - unreadable_regions: อธิบายสั้นๆ ว่าส่วนไหนอ่านไม่ออก
 - ข้อมูลส่วนบุคคล (ชื่อลูกค้า เลขสมาชิก) ให้ใส่ใน customer แยกไว้ ระบบจะเป็นผู้ตัดสินใจว่าจะเก็บหรือไม่
+- ถ้าผู้ใช้แนบ "ข้อความจาก OCR" มาด้วย ให้ถือว่าตัวอักษรและตัวเลขใน OCR ถูกต้องกว่าที่คุณอ่านจากรูปเอง
+  ใช้รูปเพื่อดูโครงสร้าง (คอลัมน์ไหนคือราคา บรรทัดไหนคือยอดรวม รายการสินค้าเรียงยังไง)
+  แต่ "ค่าของตัวเลข" ให้คัดจาก OCR เป็นหลัก ห้ามแก้ตัวเลขที่ OCR อ่านได้ให้เป็นค่าอื่นเพราะคิดว่าน่าจะเป็นแบบนั้น
+  ถ้า OCR กับรูปขัดแย้งกันจนตัดสินไม่ได้ ให้ใส่ค่าที่เห็นในรูป แล้วเพิ่ม warning บอกว่าฟิลด์ไหนขัดแย้ง
 - warnings และ unreadable_regions ต้องเขียนเป็น "ภาษาไทย" เสมอ เพราะข้อความสองฟิลด์นี้ถูกแสดงให้ผู้ใช้อ่านโดยตรง
   ส่วนฟิลด์อื่นให้คงข้อความตามที่พิมพ์บนใบเสร็จ (ถ้าบนใบเป็นภาษาอังกฤษก็ส่งภาษาอังกฤษ ห้ามแปล)
 
@@ -36,7 +48,7 @@ export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อ�
   "issued_time": "HH:MM",
   "currency": "THB",
   "line_items": [
-    {"qty": 0, "name": "...", "unit_price": 0, "amount": 0, "flag": null, "category_guess": "..."}
+    {"qty": 0, "name": "...", "unit_price": 0, "amount": 0, "flag": null, "category_guess": "เลือกจากรายการที่กำหนด"}
   ],
   "line_items_complete": true,
   "item_count_printed": 0,
@@ -59,6 +71,18 @@ export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อ�
 
 export const USER_PROMPT = `อ่านใบเสร็จในรูปนี้แล้วส่งข้อมูลกลับตามโครงสร้าง JSON ที่กำหนดในระบบ
 ให้ความสำคัญกับ total และ issued_at เป็นอันดับแรก`;
+
+/**
+ * ข้อความ OCR ถูกส่งเป็น text part แยกต่อจากรูป
+ *
+ * คั่นด้วยเส้นให้ชัดเพื่อไม่ให้โมเดลเข้าใจผิดว่าเป็นคำสั่ง — ทั้งก้อนคือ "ข้อมูล"
+ * ที่ถอดมาจากรูปเดียวกัน ไม่ใช่ instruction ใหม่
+ */
+export const ocrPrompt = (ocrText: string) =>
+  `ข้อความจาก OCR ของใบเสร็จใบเดียวกันนี้ (ตัวอักษรและตัวเลขในนี้ถูกต้องกว่าที่อ่านจากรูป):
+--- เริ่มข้อความ OCR ---
+${ocrText}
+--- จบข้อความ OCR ---`;
 
 /** เรียก API ไม่สำเร็จ (key ผิด เน็ตล่ม โมเดลไม่รับรูป) — ข้อความเป็นภาษาไทย */
 export class AIUnavailable extends Error {}
@@ -133,6 +157,7 @@ export function parseJsonLoose(text: string | null | undefined): Record<string, 
  */
 export async function extractReceipt(
   jpegBytes: Buffer,
+  ocrText: string | null = null,
 ): Promise<{ payload: Record<string, unknown> | null; model: string }> {
   const model = settings.kkuVisionModel;
   const b64 = jpegBytes.toString("base64");
@@ -150,6 +175,8 @@ export async function extractReceipt(
           content: [
             { type: "text", text: USER_PROMPT },
             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } },
+            // วางไว้ "หลัง" รูป เพื่อให้โมเดลดูโครงสร้างจากรูปก่อน แล้วค่อยเอา OCR ไปทาบ
+            ...(ocrText ? [{ type: "text" as const, text: ocrPrompt(ocrText) }] : []),
           ],
         },
       ],
