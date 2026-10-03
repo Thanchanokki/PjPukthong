@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -9,6 +8,7 @@ import {
   deleteTransaction,
   fetchMonthly,
 } from "../api";
+import { AxisToggle, UploadedAxisNotice } from "../components/AxisToggle";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -19,8 +19,13 @@ export default function MonthlyPage() {
   /**
    * แกนเวลาที่ใช้ตีความคำว่า "เดือนนี้" — ดู db/models.ts ฝั่ง backend
    * เปลี่ยนแล้วได้คนละชุดข้อมูล ไม่ใช่แค่คนละลำดับ
+   *
+   * เก็บใน URL เหมือนหน้าสรุป เพื่อให้สลับสองหน้าแล้วยังดูมุมมองเดิมอยู่
    */
-  const [axis, setAxis] = useState<DateAxis>("purchased");
+  const axis: DateAxis = params.get("by") === "uploaded" ? "uploaded" : "purchased";
+
+  const setQuery = (next: { month?: string; by?: DateAxis }) =>
+    setParams({ month: next.month ?? month, by: next.by ?? axis });
 
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["monthly", month, axis],
@@ -38,30 +43,10 @@ export default function MonthlyPage() {
         <input
           type="month"
           value={month}
-          onChange={(e) => setParams({ month: e.target.value })}
+          onChange={(e) => setQuery({ month: e.target.value })}
           className="field w-44"
         />
-        <div className="flex items-center gap-1 text-xs">
-          <span className="text-slate-400">ดูตาม</span>
-          {(
-            [
-              ["purchased", "เดือนที่ซื้อ"],
-              ["uploaded", "เดือนที่สแกน"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setAxis(key)}
-              className={`rounded-lg px-2.5 py-1 font-medium ${
-                axis === key
-                  ? "bg-teal-700 text-white"
-                  : "border border-slate-300 bg-white text-slate-600"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <AxisToggle value={axis} onChange={(by) => setQuery({ by })} />
       </div>
 
       {isPending && <p className="text-sm text-slate-500">กำลังโหลด…</p>}
@@ -83,12 +68,7 @@ export default function MonthlyPage() {
             <Stat label="จำนวนรายการ" value={`${data.transaction_count}`} />
           </div>
 
-          {data.axis === "uploaded" && (
-            <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-500">
-              กำลังดูตาม<b>เดือนที่สแกนเข้าระบบ</b> — ยอดนี้รวมใบที่ซื้อมาจากเดือนอื่นด้วย
-              จึงไม่ใช่ค่าใช้จ่ายของเดือนนี้ ถ้าต้องการยอดรายเดือนจริงให้กด "เดือนที่ซื้อ"
-            </p>
-          )}
+          {data.axis === "uploaded" && <UploadedAxisNotice />}
 
           <div className="rounded-xl border border-slate-200 bg-white">
             <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-medium">
@@ -156,7 +136,7 @@ function Row({ tx, onDelete }: { tx: Transaction; onDelete: () => void }) {
           className="text-slate-400 hover:text-teal-700"
           title="ดูใบเสร็จ"
         >
-          🧾
+          
         </a>
       )}
       <button

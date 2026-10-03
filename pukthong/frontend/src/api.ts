@@ -21,7 +21,15 @@ export const API_BASE = import.meta.env.VITE_API_BASE || guessApiBase();
  * (ฝั่งที่ทำ login/register เดิมก็ใช้ที่เดียวกัน แต่แนบ token ผ่าน axios interceptor
  * ส่วนไฟล์นี้ใช้ fetch ล้วน จึงเติม header เองใน authHeaders())
  */
-const TOKEN_KEY = "pukthong_token";
+export const TOKEN_KEY = "pukthong_token";
+
+/**
+ * ยิงเมื่อ backend ตอบ 401 — auth.tsx ฟังแล้วพาออกจากระบบให้
+ *
+ * ใช้ event แทนการ import ฟังก์ชันจาก auth.tsx เพราะไฟล์นี้เป็นชั้นล่างสุด
+ * ถ้า import ขึ้นไปจะเกิด circular import (auth.tsx import api.ts อยู่แล้ว)
+ */
+export const UNAUTHORIZED_EVENT = "pukthong:unauthorized";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
@@ -169,7 +177,17 @@ export type Monthly = {
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // token หมดอายุหรือถูกเพิกถอน — ทิ้งทันที ไม่งั้นแอปจะพยายามใช้ต่อจนกว่าจะปิดแท็บ
-    if (res.status === 401) clearToken();
+    if (res.status === 401) {
+      /**
+       * ยิง event เฉพาะตอนที่ "เคยมี token อยู่" = session หมดอายุระหว่างใช้งาน
+       *
+       * กรอกรหัสผ่านผิดตอนล็อกอินก็ได้ 401 เหมือนกัน แต่ตอนนั้นยังไม่มี token
+       * ถ้ายิงด้วยจะไปล้าง cache ทิ้งฟรีๆ ทุกครั้งที่พิมพ์รหัสผิด
+       */
+      const hadToken = Boolean(getToken());
+      clearToken();
+      if (hadToken) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
     let detail = `เกิดข้อผิดพลาด (HTTP ${res.status})`;
     try {
       const body = await res.json();

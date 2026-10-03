@@ -99,7 +99,7 @@ export default function ReviewPage() {
         >
           {/* พื้นหลังเข้มเพราะตาเป็นสีขาว ถ้าวางบนพื้นอ่อนจะมองไม่เห็น */}
           <span className="loader" aria-hidden="true" />
-          <span>AI กำลังอ่านใบเสร็จ… (ใช้เวลาสักครู่)</span>
+          <span>ระบบกำลังอ่านใบเสร็จ… (ใช้เวลาสักครู่)</span>
         </div>
       )}
       {extract.isError && (

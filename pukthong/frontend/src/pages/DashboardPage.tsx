@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { Monthly, baht, fetchMonthly, fetchMonths } from "../api";
+import { type DateAxis, Monthly, baht, fetchMonthly, fetchMonths } from "../api";
+import { AxisToggle, UploadedAxisNotice } from "../components/AxisToggle";
 import { FALLBACK } from "../categories";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -19,22 +20,32 @@ const BAR = "#0d9488";
 export default function DashboardPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? thisMonth();
+  const axis: DateAxis = params.get("by") === "uploaded" ? "uploaded" : "purchased";
   const [showTable, setShowTable] = useState(false);
+
+  /** เขียนทั้งสองค่าเสมอ ไม่งั้นเปลี่ยนเดือนแล้วโหมดหลุดกลับเป็นค่าเริ่มต้น */
+  const setQuery = (next: { month?: string; by?: DateAxis }) =>
+    setParams({ month: next.month ?? month, by: next.by ?? axis });
 
   const { data, isPending, isError, error } = useQuery({
     // key เดียวกับหน้ารายการเดือน — สลับแท็บไปมาไม่ยิงซ้ำ และตัวเลขสองหน้าตรงกันเสมอ
-    queryKey: ["monthly", month],
-    queryFn: () => fetchMonthly(month),
+    queryKey: ["monthly", month, axis],
+    queryFn: () => fetchMonthly(month, axis),
   });
 
   return (
     <div className="space-y-4">
-      <input
-        type="month"
-        value={month}
-        onChange={(e) => setParams({ month: e.target.value })}
-        className="field w-44"
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setQuery({ month: e.target.value })}
+          className="field w-44"
+        />
+        <AxisToggle value={axis} onChange={(by) => setQuery({ by })} />
+      </div>
+
+      {data && data.axis === "uploaded" && <UploadedAxisNotice />}
 
       {isPending && <p className="text-sm text-slate-500">กำลังโหลด…</p>}
       {isError && (
@@ -44,7 +55,11 @@ export default function DashboardPage() {
       )}
 
       {data && data.transaction_count === 0 && (
-        <EmptyState current={month} onPick={(m) => setParams({ month: m })} />
+        <EmptyState
+          current={month}
+          axis={axis}
+          onPick={(m) => setQuery({ month: m })}
+        />
       )}
 
       {data && data.transaction_count > 0 && (
@@ -56,7 +71,7 @@ export default function DashboardPage() {
             showTable={showTable}
             onToggleTable={() => setShowTable((v) => !v)}
           />
-          <DailyChart rows={data.by_day} />
+          <DailyChart rows={data.by_day} axis={data.axis} />
         </>
       )}
     </div>
@@ -72,16 +87,19 @@ export default function DashboardPage() {
  */
 function EmptyState({
   current,
+  axis,
   onPick,
 }: {
   current: string;
+  axis: DateAxis;
   onPick: (month: string) => void;
 }) {
   // ห่อด้วย arrow เสมอ — ถ้าส่ง fetchMonths ตรงๆ React Query จะยัด context ของมัน
   // เข้าไปเป็นอาร์กิวเมนต์แรก แล้วกลายเป็น axis ที่ไม่ถูกต้อง
+  // ต้องถามด้วยแกนเดียวกับที่กำลังดูอยู่ ไม่งั้นจะแนะนำเดือนที่กดแล้วยังว่างอยู่ดี
   const { data: months } = useQuery({
-    queryKey: ["months", "purchased"],
-    queryFn: () => fetchMonths("purchased"),
+    queryKey: ["months", axis],
+    queryFn: () => fetchMonths(axis),
   });
   const others = (months ?? []).filter((m) => m.month !== current);
 
@@ -94,8 +112,8 @@ function EmptyState({
       ) : (
         <>
           <p className="mt-4 text-xs text-slate-500">
-            แต่มีรายจ่ายอยู่ในเดือนอื่น — ใบเสร็จถูกจัดเข้าเดือนตาม
-            <b> วันที่บนใบ</b> ไม่ใช่วันที่อัปโหลด
+            แต่มีรายจ่ายอยู่ในเดือนอื่น — ตอนนี้จัดเข้าเดือนตาม
+            <b>{axis === "uploaded" ? " วันที่สแกนเข้าระบบ" : " วันที่บนใบเสร็จ"}</b>
           </p>
           <ul className="mx-auto mt-3 flex max-w-sm flex-col gap-1">
             {others.map((m) => (
@@ -124,16 +142,19 @@ function EmptyState({
 function Hero({ data }: { data: Monthly }) {
   const days = data.by_day.length;
   const avg = days > 0 ? Number(data.expense_total) / days : 0;
+  const uploaded = data.axis === "uploaded";
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <p className="text-xs text-slate-500">รายจ่ายรวมเดือนนี้</p>
+      <p className="text-xs text-slate-500">
+        {uploaded ? "ยอดรวมของใบที่สแกนเดือนนี้" : "รายจ่ายรวมเดือนนี้"}
+      </p>
       <p className="mt-1 text-4xl font-semibold tabular-nums text-slate-900">
         ฿{baht(data.expense_total)}
       </p>
       <p className="mt-2 text-xs text-slate-500">
-        {data.transaction_count} ใบเสร็จ · {days} วันที่มีรายจ่าย · เฉลี่ยวันละ ฿
-        {baht(avg)}
+        {data.transaction_count} ใบเสร็จ · {days}{" "}
+        {uploaded ? "วันที่มีการสแกน" : "วันที่มีรายจ่าย"} · เฉลี่ยวันละ ฿{baht(avg)}
       </p>
     </div>
   );
@@ -238,14 +259,22 @@ function CategoryChart({
   );
 }
 
-/** รายจ่ายรายวัน — เห็นว่าเดือนนี้ใช้หนักช่วงไหน */
-function DailyChart({ rows }: { rows: Monthly["by_day"] }) {
+/** ยอดรายวัน — วันที่บนแกนนอนเปลี่ยนความหมายตามแกนที่เลือก */
+function DailyChart({
+  rows,
+  axis,
+}: {
+  rows: Monthly["by_day"];
+  axis: DateAxis;
+}) {
   if (rows.length < 2) return null;
   const max = Math.max(...rows.map((r) => Number(r.total)), 0);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="mb-4 text-sm font-medium">รายจ่ายรายวัน</h2>
+      <h2 className="mb-4 text-sm font-medium">
+        {axis === "uploaded" ? "ยอดตามวันที่สแกน" : "รายจ่ายรายวัน"}
+      </h2>
       <div className="flex h-32 items-end gap-1 overflow-x-auto">
         {rows.map((r) => (
           <div
