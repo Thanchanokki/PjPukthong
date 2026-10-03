@@ -190,7 +190,7 @@ export default function CapturePage() {
             onClick={() => navigate(`/review/${result.receipt_id}?auto=1`)}
             className="btn-primary w-full py-4 text-base"
           >
-            ✨ ให้ AI อ่านให้
+            สแกนอ่านให้เลย
           </button>
 
           <div className="flex gap-2">
