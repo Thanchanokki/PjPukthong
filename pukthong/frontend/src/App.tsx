@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
 import { Logo } from "./components/Logo";
+import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -62,6 +63,7 @@ function Shell() {
           <Route path="/manual" element={<ManualPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monthly" element={<MonthlyPage />} />
+           <Route path="/budget" element={<BudgetPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
