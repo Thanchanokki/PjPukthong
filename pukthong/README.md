@@ -110,8 +110,8 @@ docker compose run --rm api npm run migrate
 0. `POST /api/auth/register` หรือ `/api/auth/login` — ได้ `{ token, user }` กลับมา
    frontend เก็บ token ไว้ใน `localStorage` แล้วแนบไปกับทุก request หลังจากนั้น
 1. `POST /api/receipts` — อัปโหลด → แปลง HEIC→JPEG, ย่อรูป, กัน dedupe ด้วย SHA-256,
-   เช็คภาพเบลอ **และอ่านตัวอักษรด้วย Cloud Vision (OCR)**
-   (ยังไม่เรียก AI เพื่อให้เตือนเรื่องภาพเบลอ/อ่านยากได้ก่อนเสียค่า API — ส่วน OCR ถูกและเร็ว
+   เช็คภาพเบลอ **และอ่านตัวอักษรด้วย Typhoon OCR**
+   (ยังไม่เรียก AI extraction เพื่อให้เตือนเรื่องภาพเบลอ/อ่านยากได้ก่อน — OCR แยกขั้น
    จึงทำทุกใบไปเลย แล้วเก็บผลลง DB ไม่ต้องยิงซ้ำ)
 2. `POST /api/receipts/{id}/extract` — ปุ่ม ✨ ให้ AI อ่าน (กดซ้ำได้ถ้าผลไม่ดี)
    ส่ง**ทั้งรูปและข้อความ OCR**ไปให้โมเดล — รูปใช้ดูโครงสร้าง (คอลัมน์ไหนคือราคา)
@@ -220,21 +220,20 @@ API ไม่รับค่านี้จากผู้ใช้แล้ว 
 `/dashboard` กับ `/monthly` ใช้ `GET /api/transactions?month=` ตัวเดียวกันและ query key
 เดียวกัน — สลับแท็บไปมาไม่ยิงซ้ำ และตัวเลขสองหน้าไม่มีทางไม่ตรงกัน
 
-## OCR (Google Cloud Vision)
+## OCR (Typhoon)
 
-OCR เป็น**ตัวช่วย ไม่ใช่ของจำเป็น** — ไม่ตั้ง `GOOGLE_VISION_API_KEY` ก็ใช้แอปได้ครบทุกอย่าง
+OCR เป็น**ตัวช่วย ไม่ใช่ของจำเป็น** — ไม่ตั้ง `TYPHOON_OCR_API_KEY` ก็ใช้แอปได้ครบทุกอย่าง
 แค่ AI ต้องอ่านตัวเลขจากรูปเอาเองเหมือนก่อนมี OCR
 
 ```dotenv
-GOOGLE_VISION_API_KEY=AIza...       # ว่างไว้ = ปิด OCR ทั้งระบบ
-OCR_LANGUAGE_HINTS=th,en
-OCR_QUALITY_THRESHOLD=0.75          # ต่ำกว่านี้ = ขึ้นแบนเนอร์เตือนว่าภาพอ่านยาก
+TYPHOON_OCR_API_KEY=...              # ขอ key จาก Typhoon; ว่างไว้ = ปิด OCR
+TYPHOON_OCR_BASE_URL=https://api.opentyphoon.ai/v1
+TYPHOON_OCR_MODEL=typhoon-v2.5-30b-a3-instruct
+OCR_QUALITY_THRESHOLD=0.75          # ใช้ได้เมื่อ provider รายงานคะแนน OCR
 ```
 
-ต้องเปิด **Cloud Vision API** ใน GCP project ด้วย ไม่งั้นจะได้ HTTP 403
-(ดู log ของ api — ทุกกรณีที่ OCR ใช้ไม่ได้จะขึ้น warn บอกสาเหตุ แล้วข้ามไปเฉยๆ ไม่ทำให้ request ล้ม)
-
-**เรื่องค่าใช้จ่าย:** Cloud Vision ฟรี 1,000 ครั้ง/เดือน หลังจากนั้นคิดเป็นรายครั้ง
+เลือกโมเดลที่บัญชี Typhoon ของคุณเปิดให้ใช้และรองรับภาพผ่าน `image_url` หาก key ผิด
+หรือโมเดลไม่รองรับภาพ ระบบจะข้าม OCR โดยไม่ทำให้การอัปโหลดล้ม
 ระบบยิง OCR **ครั้งเดียวต่อใบเสร็จ** — ผลถูกเก็บลง `receipts.ocrText` และการอัปโหลดรูปซ้ำ
 จะถูก dedupe ด้วย `fileHash` ตั้งแต่ก่อนถึงขั้น OCR กด "ให้ AI อ่านซ้ำ" กี่ครั้งก็ไม่เสียเพิ่ม
 

@@ -68,7 +68,7 @@ openssl rand -hex 32          # ได้ค่ามาแล้ววางต
 
 ```dotenv
 KKU_API_KEY=sk_xxxxxxxxxxxxxxxxxxxx
-GOOGLE_VISION_API_KEY=AIza…(ไม่บังคับ — ดูด้านล่าง)
+TYPHOON_OCR_API_KEY=…(ไม่บังคับ — ดูด้านล่าง)
 MONGODB_URI=mongodb://pukthong_admin:change_me_in_local_env@localhost:27017/pukthong?authSource=admin
 JWT_SECRET=3f9c…(ค่าที่สุ่มได้)
 ```
@@ -83,14 +83,15 @@ JWT_SECRET=3f9c…(ค่าที่สุ่มได้)
 `MONGODB_URI` ต้องตรงกับ user/password ที่สร้างไว้ใน MongoDB ของตัวเอง — `authSource=admin`
 หมายถึง "user ตัวนี้ถูกสร้างไว้ในฐานข้อมูล admin" ส่วนข้อมูลจริงเขียนลงฐานข้อมูล `pukthong`
 
-### `GOOGLE_VISION_API_KEY` — ไม่บังคับ แต่ช่วยให้อ่านตัวเลขแม่นขึ้นมาก
+### `TYPHOON_OCR_API_KEY` — ไม่บังคับ แต่ช่วยให้อ่านตัวเลขแม่นขึ้น
 
-ถ้าเติม key นี้ ระบบจะให้ Google Cloud Vision อ่านตัวอักษรบนใบเสร็จตั้งแต่ตอนอัปโหลด
+ถ้าเติม key นี้ ระบบจะให้ Typhoon OCR อ่านตัวอักษรบนใบเสร็จตั้งแต่ตอนอัปโหลด
 แล้วส่งข้อความนั้นไปพร้อมรูปตอนกดปุ่ม ✨ เพื่อให้ AI ยึดตัวเลขตาม OCR แทนที่จะเดาจากพิกเซล
 — ช่วยเรื่องสลิปความร้อนภาษาไทยที่ตัวเลขมักเพี้ยนได้ชัดเจน
 
-ขั้นตอน: GCP console → เปิดใช้ **Cloud Vision API** ใน project → APIs & Services →
-Credentials → Create API key → (แนะนำ) กด Restrict key ให้เรียกได้เฉพาะ Cloud Vision API
+ตั้ง `TYPHOON_OCR_API_KEY` จากบัญชี Typhoon พร้อม `TYPHOON_OCR_BASE_URL` และ
+`TYPHOON_OCR_MODEL` ตาม API/model ที่บัญชีของคุณเปิดให้ใช้ โมเดลต้องรองรับภาพผ่าน `image_url`.
+ระบบใช้ OpenAI-compatible chat completions และไม่ต้องตั้งค่า Google Cloud Vision อีกต่อไป.
 
 **ปล่อยว่างไว้ก็ได้** แอปทำงานครบทุกอย่างเหมือนเดิม แค่ข้ามขั้น OCR ไป
 
@@ -225,9 +226,8 @@ docker compose ps             # ดูสถานะ
 | อัปโหลดใบเสร็จแล้วขึ้น 401 | token หมดอายุ — refresh หน้าเว็บแล้วล็อกอินใหม่ |
 | สมัครแล้วขึ้น `อีเมลนี้ถูกใช้ไปแล้ว` | มีบัญชีอยู่แล้ว (อีเมลไม่แยกตัวพิมพ์เล็ก-ใหญ่) — กด "เข้าสู่ระบบ" แทน |
 | `ai_configured: false` | key ยังไม่เข้า — เช็คว่าเติม `KKU_API_KEY` แล้วสั่ง `docker compose up -d api` |
-| `ocr_configured: false` | ยังไม่ได้เติม `GOOGLE_VISION_API_KEY` — ไม่ใช่ปัญหา แอปใช้ได้ปกติ แค่ข้ามขั้น OCR (ดูข้อ 3) |
-| ตั้ง key แล้วแต่ log ขึ้น `Cloud Vision ตอบ HTTP 403` | ยังไม่ได้เปิด Cloud Vision API ใน GCP project หรือ key ถูก restrict ไว้ผิดตัว |
-| log ขึ้น `Cloud Vision ตอบ HTTP 429` | โควตาหมด (ฟรี 1,000 ครั้ง/เดือน) — ระบบข้าม OCR ให้เอง ยังกดปุ่ม ✨ ได้ตามปกติ |
+| `ocr_configured: false` | ยังไม่ได้เติม `TYPHOON_OCR_API_KEY` — ไม่ใช่ปัญหา แอปใช้ได้ปกติ แค่ข้ามขั้น OCR (ดูข้อ 3) |
+| ตั้ง key แล้วแต่ log ขึ้น `เรียก Typhoon OCR ไม่สำเร็จ` | ตรวจ key, base URL และชื่อโมเดล รวมถึงการรองรับภาพของโมเดล — ระบบข้าม OCR ให้เอง ยังกดปุ่ม ✨ ได้ตามปกติ |
 | กดปุ่ม ✨ แล้วขึ้น error 502 | โมเดลอาจไม่รับรูป — เปลี่ยน `KKU_VISION_MODEL` ใน `backend/.env` **อย่าแก้โค้ด** (ดูข้อ 10) |
 | หน้าเว็บเปิดได้แต่บันทึกไม่ได้ | CORS — เพิ่ม URL ที่เปิดอยู่เข้า `CORS_ORIGINS` (ดูข้อ 6) |
 | `port is already allocated` | มีอะไรใช้พอร์ต 3000/8000 อยู่ — ปิดตัวนั้น หรือแก้พอร์ตใน `docker-compose.yml` |

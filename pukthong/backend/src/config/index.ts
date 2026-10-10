@@ -34,14 +34,10 @@ export const settings = {
   kkuApiKey: str("KKU_API_KEY", ""),
   kkuVisionModel: str("KKU_VISION_MODEL", "gemini-2.5-flash"),
 
-  // Google Cloud Vision (OCR) — ว่างไว้ = ปิด OCR ทั้งระบบ แอปยังทำงานได้ปกติ
-  googleVisionApiKey: str("GOOGLE_VISION_API_KEY", ""),
-  googleVisionUrl: str(
-    "GOOGLE_VISION_URL",
-    "https://vision.googleapis.com/v1/images:annotate",
-  ),
-  /** ใบเสร็จไทยมีอังกฤษปนเสมอ (ชื่อแบรนด์ เลขที่เอกสาร) — บอกใบ้ทั้งสองภาษา */
-  ocrLanguageHints: str("OCR_LANGUAGE_HINTS", "th,en"),
+  // Typhoon OCR (OpenAI-compatible) — ว่างไว้ = ปิด OCR แต่แอปยังทำงานได้ปกติ
+  typhoonOcrApiKey: str("TYPHOON_OCR_API_KEY", ""),
+  typhoonOcrBaseUrl: str("TYPHOON_OCR_BASE_URL", "https://api.opentyphoon.ai/v1"),
+  typhoonOcrModel: str("TYPHOON_OCR_MODEL", "typhoon-ocr"),
   /** ต่ำกว่านี้ถือว่า OCR อ่านได้ไม่ดี — ใช้เตือนผู้ใช้ ไม่ได้ใช้บล็อกอะไร */
   ocrQualityThreshold: flt("OCR_QUALITY_THRESHOLD", 0.75),
 
@@ -99,7 +95,3 @@ export const corsOriginList = settings.corsOrigins
 
 export const maxUploadBytes = settings.maxUploadMb * 1024 * 1024;
 
-export const ocrLanguageHintList = settings.ocrLanguageHints
-  .split(",")
-  .map((l) => l.trim())
-  .filter(Boolean);

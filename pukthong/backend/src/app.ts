@@ -88,7 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     status: "ok",
     vision_model: settings.kkuVisionModel,
     ai_configured: Boolean(settings.kkuApiKey),
-    ocr_configured: Boolean(settings.googleVisionApiKey),
+    ocr_configured: Boolean(settings.typhoonOcrApiKey),
   }));
 
   return app;

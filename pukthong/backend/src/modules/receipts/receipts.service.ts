@@ -41,7 +41,7 @@ export interface UploadResult {
  *
  * ยังไม่เรียก AI ตรงนี้ เพื่อให้เตือนเรื่องภาพเบลอได้ก่อนที่จะเสียค่าเรียก API
  *
- * แต่ "ทำ OCR" ตรงนี้เลย เพราะ Cloud Vision ถูกและเร็วกว่า AI มาก และผลของมัน
+ * แต่ "ทำ OCR" ตรงนี้เลย เพราะ Typhoon OCR แยกจาก AI extraction และผลของมัน
  * ถูกใช้ทั้งตอนกด ✨ (ส่งไปคู่กับรูป) และตอนเตือนว่าภาพอ่านยาก จึงคุ้มที่จะทำล่วงหน้า
  * ทุกใบ — ผลถูกเก็บลง DB จึงไม่ถูกเรียกซ้ำแม้ผู้ใช้กด "อ่านซ้ำ" หลายรอบ
  */
@@ -69,7 +69,7 @@ export async function createFromImage(
       duplicate: true,
       blurry: quality.isBlurry(score),
       blurScore: score,
-      // ใช้ผล OCR ที่เก็บไว้รอบก่อน ไม่ยิง Cloud Vision ซ้ำให้เสียเงินฟรี
+      // ใช้ผล OCR ที่เก็บไว้รอบก่อน ไม่เรียก Typhoon ซ้ำโดยไม่จำเป็น
       ocrQuality: existing.ocrQuality ?? null,
       ocrLowQuality: ocr.isLowQuality(existing.ocrQuality ?? null),
       hasOcr: Boolean(existing.ocrText),
@@ -184,7 +184,7 @@ export async function extract(userId: string, receiptId: string) {
 /**
  * คืนข้อความ OCR ของใบเสร็จ — ทำ OCR ให้ถ้ายังไม่เคยมี
  *
- * จำเป็นเพราะใบเสร็จที่อัปโหลดไว้ "ก่อน" เปิดใช้ Cloud Vision (หรือตอนที่ Vision ล่ม)
+ * จำเป็นเพราะใบเสร็จที่อัปโหลดไว้ก่อนเปิดใช้ Typhoon OCR (หรือตอนที่ API ล่ม)
  * จะไม่มี ocrText ติดมาด้วย — ถ้าไม่เติมให้ตรงนี้ ใบเก่าจะไม่ได้ประโยชน์จาก OCR เลย
  * ผลถูกเขียนกลับลง DB จึงเกิดขึ้นครั้งเดียวต่อใบ ไม่ใช่ทุกครั้งที่กด "อ่านซ้ำ"
  */
