@@ -27,8 +27,8 @@ if (!settings.kkuApiKey) {
   app.log.warn("ยังไม่ได้ตั้ง KKU_API_KEY ใน .env — ปุ่มให้ AI อ่านจะใช้งานไม่ได้");
 }
 // OCR เป็นตัวช่วย ไม่ใช่ของจำเป็น — ไม่ตั้งก็ใช้แอปได้ แค่ AI ต้องอ่านจากรูปอย่างเดียว
-if (!settings.googleVisionApiKey) {
-  app.log.warn("ยังไม่ได้ตั้ง GOOGLE_VISION_API_KEY ใน .env — ข้ามขั้น OCR ทุกใบ");
+if (!settings.typhoonOcrApiKey) {
+  app.log.warn("ยังไม่ได้ตั้ง TYPHOON_OCR_API_KEY ใน .env — ข้ามขั้น OCR ทุกใบ");
 }
 
 await app.listen({ host: "0.0.0.0", port: settings.port });

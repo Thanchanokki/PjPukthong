@@ -235,7 +235,7 @@ export function scanConfidence(
             },
   );
 
-  // ── 5. Cloud Vision อ่านตัวอักษรได้ชัดแค่ไหน (ความมั่นใจระดับพิกเซล)
+  // ── 5. OCR provider ไม่ส่งคะแนนความมั่นใจระดับตัวอักษร จึงมักเป็น unknown
   checks.push(
     ocrQuality === null
       ? {
@@ -250,7 +250,7 @@ export function scanConfidence(
           label: "ความคมชัดของตัวอักษรที่ OCR อ่านได้",
           status: ocrQuality >= 0.85 ? "pass" : "fail",
           weight: 10,
-          detail: `Cloud Vision มั่นใจเฉลี่ย ${(ocrQuality * 100).toFixed(0)}% ถ่วงน้ำหนักตามจำนวนตัวอักษร`,
+              detail: `OCR provider รายงานความมั่นใจ ${(ocrQuality * 100).toFixed(0)}%`,
         },
   );
 
