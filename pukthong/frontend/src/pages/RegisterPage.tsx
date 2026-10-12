@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import {
   AuthBrand,
+  AuthCheckbox,
   AuthError,
   AuthField,
   AuthShell,
@@ -10,14 +11,26 @@ import {
 } from "../components/AuthShell";
 import { useAuth } from "../auth";
 
+/** วว/ดด/ปปปป — ปีเป็น พ.ศ. ก็ได้ ยังไม่ validate ว่าเป็นวันที่จริง เพราะยังไม่ส่งไปไหน */
+const BIRTHDATE_PATTERN = "^\\d{2}/\\d{2}/\\d{4}$";
+
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  // "ชื่อผู้ใช้" ในดีไซน์ใหม่ ส่งไป backend เป็นช่อง name เดิม — backend ยังไม่มีคอลัมน์
+  // username แยกต่างหาก เปลี่ยนแค่ label/placeholder ฝั่งนี้
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  /**
+   * วันเกิด — เก็บไว้ในฟอร์มเฉยๆ ก่อน
+   * ⚠️ ยังไม่ส่งไป backend: ตาราง users และ /api/auth/register ยังไม่มีคอลัมน์นี้
+   * ตอนต่อจริง ต้องเพิ่ม birthdate ใน payload ของ registerAccount() ใน api.ts ด้วย
+   */
+  const [birthdate, setBirthdate] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -46,11 +59,11 @@ export default function RegisterPage() {
 
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <AuthField
-          label="ชื่อ"
-          autoComplete="name"
+          label="ชื่อผู้ใช้"
+          autoComplete="username"
           required
           maxLength={100}
-          placeholder="ชื่อที่ใช้แสดงในแอป"
+          placeholder="username"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
@@ -62,6 +75,16 @@ export default function RegisterPage() {
           placeholder="name@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+        />
+        <AuthField
+          label="วันเดือนปีเกิด"
+          inputMode="numeric"
+          required
+          pattern={BIRTHDATE_PATTERN}
+          title="กรอกรูปแบบ วว/ดด/ปปปป"
+          placeholder="วว/ดด/ปปปป"
+          value={birthdate}
+          onChange={(e) => setBirthdate(e.target.value)}
         />
         <AuthField
           label="รหัสผ่าน"
@@ -78,17 +101,23 @@ export default function RegisterPage() {
           type="password"
           autoComplete="new-password"
           required
-          placeholder="••••••••"
+          placeholder="พิมพ์รหัสผ่านอีกครั้ง"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
         />
+
+        <AuthCheckbox checked={acceptedTerms} onChange={setAcceptedTerms}>
+          ยอมรับ<span className="font-medium text-stamp">ข้อตกลงการใช้งาน</span>และ
+          <span className="font-medium text-stamp">นโยบายความเป็นส่วนตัว</span>
+        </AuthCheckbox>
+
         {error && <AuthError message={error} />}
         <AuthSubmit pending={pending} pendingLabel="กำลังสมัคร…">
           สมัครสมาชิก
         </AuthSubmit>
       </form>
 
-      <p className="mt-7 text-center text-xs text-[#a89f8d]">
+      <p className="mt-7 text-center text-xs text-ink/55">
         มีบัญชีแล้ว?{" "}
         <Link to="/login" className="font-semibold text-stamp">
           เข้าสู่ระบบ

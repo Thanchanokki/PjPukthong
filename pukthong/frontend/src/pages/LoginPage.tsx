@@ -72,7 +72,7 @@ export default function LoginPage() {
         </AuthSubmit>
       </form>
 
-      <p className="mt-7 text-center text-xs text-[#a89f8d]">
+      <p className="mt-7 text-center text-xs text-ink/55">
         ยังไม่มีบัญชี?{" "}
         <Link to="/register" className="font-semibold text-stamp">
           สมัครสมาชิก

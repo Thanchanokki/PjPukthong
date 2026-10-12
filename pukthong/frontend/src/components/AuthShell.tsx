@@ -1,54 +1,68 @@
 /**
- * โครงหน้าจอของ "เข้าสู่ระบบ" กับ "สมัครสมาชิก" — แปลงมาจาก SCREEN 0 ของ
- * docs/pukthong-uxui-mockup.html (ธีมม้วนใบเสร็จ พื้นเข้ม + ปุ่มสี stamp)
+ * โครงหน้าจอของ "เข้าสู่ระบบ" กับ "สมัครสมาชิก" — ธีม "ม้วนใบเสร็จ" แบบเดียวกับ
+ * หน้างบประมาณ/รายงาน (พื้น paper, โลโก้แทนไอคอนอีโมจิ) แทนธีมพื้นเข้มชุดก่อนหน้า
  *
  * สองหน้านั้นต่างกันแค่ช่องกรอก จึงรวมส่วนที่เหมือนกันไว้ที่นี่
  */
+import { Logo } from "./Logo";
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col justify-center overflow-hidden bg-ink px-7 py-10 text-paper">
-      {/* วงแสงสี stamp มุมขวาบน ตามที่ mockup วาดไว้ด้วย ::before */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(189,74,60,.25), transparent 70%)",
-        }}
-      />
-      <div className="relative z-10 mx-auto w-full max-w-sm">{children}</div>
+    <div className="flex min-h-screen flex-col justify-center bg-paper px-7 py-10 text-ink">
+      <div className="mx-auto w-full max-w-sm">{children}</div>
     </div>
   );
 }
 
 export function AuthBrand({ tagline }: { tagline: React.ReactNode }) {
   return (
-    <div className="mb-9 flex flex-col items-center gap-2.5">
-      <div className="flex h-14 w-14 -rotate-[4deg] items-center justify-center rounded-sm bg-stamp text-[26px] shadow-[0_10px_20px_-8px_rgba(189,74,60,.6)]">
-        🧾
-      </div>
-      <h1 className="text-lg font-bold tracking-wide">Pukthong</h1>
-      <p className="text-center font-mono text-[11px] leading-relaxed text-[#a89f8d]">
-        {tagline}
-      </p>
+    <div className="mb-9 flex flex-col items-center gap-3">
+      <Logo variant="full" height={96} />
+      <p className="text-center text-sm leading-relaxed text-ink/60">{tagline}</p>
     </div>
   );
 }
 
 export function AuthField({
   label,
+  className = "",
   ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; className?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.07em] text-[#a89f8d]">
-        {label}
-      </span>
+      <span className="text-xs font-medium text-ink/60">{label}</span>
       <input
         {...props}
-        className="rounded-sm border border-white/20 bg-white/5 px-3 py-3 text-sm text-paper placeholder:text-[#6b6355] focus:border-stamp focus:outline-none"
+        className={`rounded-lg border border-kraft bg-white px-3 py-2.5 text-sm text-ink placeholder:text-ink/35 focus:border-stamp focus:outline-none focus:ring-1 focus:ring-stamp ${className}`}
       />
+    </label>
+  );
+}
+
+/**
+ * checkbox ยอมรับข้อตกลง — ตอนนี้ validate ฝั่ง frontend อย่างเดียว (required บังคับติ๊ก
+ * ก่อนส่งฟอร์มได้) ยังไม่มีการส่งค่านี้ไป backend และยังไม่มีหน้า /terms, /privacy จริง
+ * จึงใส่ไว้เป็นข้อความเฉยๆ ก่อน ไม่ผูกลิงก์ กันไม่ให้กดแล้วเจอ 404
+ */
+export function AuthCheckbox({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex items-start gap-2.5 text-xs leading-relaxed text-ink/70">
+      <input
+        type="checkbox"
+        required
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-kraft text-stamp focus:outline-none focus:ring-1 focus:ring-stamp"
+      />
+      <span>{children}</span>
     </label>
   );
 }
@@ -58,7 +72,7 @@ export function AuthError({ message }: { message: string }) {
   return (
     <p
       role="alert"
-      className="rounded-sm border border-stamp/60 bg-stamp/15 px-3 py-2 text-xs leading-relaxed text-[#f0c9c3]"
+      className="rounded-lg border border-stamp/40 bg-stamp/5 px-3 py-2 text-xs leading-relaxed text-stamp"
     >
       {message}
     </p>
@@ -78,7 +92,7 @@ export function AuthSubmit({
     <button
       type="submit"
       disabled={pending}
-      className="mt-1.5 w-full rounded-sm bg-stamp py-3.5 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+      className="mt-1.5 w-full rounded-lg bg-stamp py-3 text-sm font-semibold text-white transition hover:bg-stamp/90 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? pendingLabel : children}
     </button>

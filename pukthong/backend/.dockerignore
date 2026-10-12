@@ -1,0 +1,10 @@
+# ความลับ — ห้ามติดไปใน image (compose ส่งค่าเข้ามาผ่าน env_file แทน)
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+uploads/
+*.tsbuildinfo
+.DS_Store
