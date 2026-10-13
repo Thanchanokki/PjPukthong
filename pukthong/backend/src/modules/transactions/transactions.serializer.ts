@@ -3,6 +3,7 @@
  * (snake_case, id) ลำดับฟิลด์และชนิดข้อมูลต้องตรงกับ frontend/src/api.ts ทุกตัว
  */
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
+import type { CategoryBook } from "../categories/categories.service.js";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -10,7 +11,11 @@ const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
  * เดิมรายการย่อยเป็นแถวในตารางจึงมี id ของตัวเอง ตอนนี้ฝังอยู่ใน transaction แล้ว
  * แต่ frontend ยังประกาศ type ว่ามี id: number — ใช้ลำดับในอาเรย์แทน
  */
-export function itemOut(r: TransactionItemDoc, index: number) {
+/**
+ * DB เก็บแค่ categoryId — ชื่อหมวดเปิดหาจาก book ตอนส่งออก จึงเปลี่ยนชื่อหมวด
+ * ทีเดียวแล้วรายการเก่าเปลี่ยนตามหมด (category = ชื่อ ไว้แสดงผล, category_id ไว้แก้ไข)
+ */
+export function itemOut(r: TransactionItemDoc, index: number, book: CategoryBook) {
   return {
     line_no: r.lineNo,
     name: r.name,
@@ -18,12 +23,15 @@ export function itemOut(r: TransactionItemDoc, index: number) {
     unit_price: r.unitPrice,
     amount: r.amount,
     flag: r.flag,
-    category: r.category ?? null,
+    category_id: r.categoryId ?? null,
+    category: book.nameOf(r.categoryId),
+    // หมวดหลักที่ dashboard ใช้จัดกลุ่ม (หมวดย่อย -> แม่, ยังไม่จัดหมวด -> อื่นๆ)
+    category_root: book.rootOf(r.categoryId).name,
     id: index + 1,
   };
 }
 
-export function transactionOut(r: TransactionDoc) {
+export function transactionOut(r: TransactionDoc, book: CategoryBook) {
   return {
     id: r._id,
     receipt_id: r.receiptId,
@@ -42,7 +50,9 @@ export function transactionOut(r: TransactionDoc) {
     vat_rate: r.vatRate,
     vat_amount: r.vatAmount,
     total: r.total,
-    category: r.category,
+    category_id: r.categoryId ?? null,
+    category: book.nameOf(r.categoryId),
+    category_root: book.rootOf(r.categoryId).name,
     payment_method: r.paymentMethod,
     payment_channel: r.paymentChannel,
     note: r.note,
@@ -50,6 +60,6 @@ export function transactionOut(r: TransactionDoc) {
     // ใบเก่าที่บันทึกไว้ก่อนมีฟิลด์นี้ ใช้เวลาที่สร้างเรคอร์ดแทน
     uploaded_at: iso(r.uploadedAt ?? r.createdAt),
     created_at: iso(r.createdAt),
-    items: (r.items ?? []).map(itemOut),
+    items: (r.items ?? []).map((it, i) => itemOut(it, i, book)),
   };
 }

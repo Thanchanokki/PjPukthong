@@ -10,6 +10,7 @@ import { buildApp } from "./app.js";
 import { requireJwtSecret, settings } from "./config/index.js";
 import { close as closeDb, connect as connectDb } from "./db/client.js";
 import { ensureIndexes } from "./db/indexes.js";
+import { ensureSystemCategories } from "./modules/categories/categories.service.js";
 
 // ล้มตั้งแต่บรรทัดแรกถ้าลืมตั้ง JWT_SECRET ดีกว่าไปพังตอนคนแรกกดสมัครสมาชิก
 requireJwtSecret();
@@ -18,6 +19,8 @@ const app = await buildApp();
 
 await connectDb();
 await ensureIndexes();
+// หมวดกลางต้องมีใน DB ก่อนรับ request แรก ไม่งั้นดรอปดาวน์หมวดจะว่าง
+await ensureSystemCategories();
 app.addHook("onClose", async () => {
   await closeDb();
 });

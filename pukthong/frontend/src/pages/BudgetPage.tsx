@@ -5,12 +5,12 @@ import { useSearchParams } from "react-router-dom";
 import { baht } from "../api";
 import {
   type BudgetLine,
-  CATEGORIES,
   copyBudget,
   fetchBudget,
   removeBudgetLimit,
   saveBudgetLimit,
 } from "../budget";
+import { useCategories } from "../categories";
 
 /**
  * หน้างบประมาณ — ธีม "ม้วนใบเสร็จ" (paper/ink/stamp/ledger/kraft จาก tailwind.config)
@@ -75,6 +75,7 @@ export default function BudgetPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
   const qc = useQueryClient();
+  const { data: categories = [] } = useCategories();
   /** หมวดที่กำลังแก้วงเงินอยู่ — เปิดได้ทีละหมวด */
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -117,7 +118,11 @@ export default function BudgetPage() {
   const unbudgeted = lines
     .filter((l) => l.limit === null)
     .sort((a, b) => Number(b.spent) - Number(a.spent));
-  const unused = CATEGORIES.filter((c) => !lines.some((l) => l.category === c));
+  // งบตั้งได้เฉพาะหมวดหลัก — หมวดย่อยถูกรวมขึ้นไปที่หมวดหลักในยอดสรุปอยู่แล้ว
+  const unused = categories
+    .filter((c) => !c.parent_id)
+    .map((c) => c.name)
+    .filter((c) => !lines.some((l) => l.category === c));
 
   const totalLimit = sum(budgeted, "limit");
   const totalSpent = sum(budgeted, "spent");

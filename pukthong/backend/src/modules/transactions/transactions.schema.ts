@@ -7,7 +7,6 @@
  */
 import { z } from "zod";
 
-import { normalize as normalizeCategory } from "../../shared/categories.js";
 import { toDecimalString } from "../../shared/money.js";
 import {
   currencyField,
@@ -29,8 +28,12 @@ const requiredDate = z
     message: "ต้องระบุวันที่ในรูปแบบ YYYY-MM-DD",
   });
 
-/** หมวดที่ผู้ใช้เลือก — บีบให้อยู่ในชุดที่รู้จักเหมือนฝั่ง AI ไม่งั้น dashboard แตก */
-const categoryField = z.preprocess(normalizeCategory, z.string().nullable());
+/**
+ * หมวดที่ผู้ใช้เลือก — รับ category_id เป็นหลัก ส่วน category (ชื่อหมวด) รับไว้ให้ client
+ * รุ่นเก่า service เป็นคนแปลงเป็น id และเช็คว่าเป็นหมวดที่ผู้ใช้คนนี้เลือกได้จริง
+ * (ทำใน schema ไม่ได้เพราะต้องรู้ว่าใครเป็นคนส่ง — แต่ละคนมีหมวดของตัวเอง)
+ */
+const categoryFields = { category_id: strField, category: strField };
 
 export const transactionItemSchema = z.object({
   line_no: intField,
@@ -39,7 +42,7 @@ export const transactionItemSchema = z.object({
   unit_price: decField,
   amount: decField,
   flag: strField,
-  category: categoryField,
+  ...categoryFields,
 });
 
 export const transactionCreateSchema = z.object({
@@ -60,7 +63,7 @@ export const transactionCreateSchema = z.object({
   vat_rate: decField,
   vat_amount: decField,
   total: requiredDecimal,
-  category: categoryField,
+  ...categoryFields,
   payment_method: strField,
   payment_channel: strField,
   note: strField,

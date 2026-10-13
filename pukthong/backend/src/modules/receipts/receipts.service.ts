@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { receipts } from "../../db/client.js";
 import type { ReceiptDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
+import { loadBook } from "../categories/categories.service.js";
 import * as ai from "./ai.provider.js";
 import { scanConfidence } from "./confidence.js";
 import * as quality from "./image.quality.js";
@@ -17,6 +18,7 @@ import * as ocr from "./ocr.provider.js";
 import { enrich } from "./receipts.enrich.js";
 import { emptyDraft, parseDraft } from "./receipts.schema.js";
 import { blurOut } from "./receipts.serializer.js";
+import { unsupportedReason } from "./receipts.support.js";
 
 /** ใบเสร็จของคนอื่นตอบ 404 เหมือนไม่มีอยู่จริง — ไม่บอกใบ้ว่ามี id นี้ในระบบ */
 export async function findOwned(id: string, userId: string): Promise<ReceiptDoc> {
@@ -120,12 +122,15 @@ const roundQuality = (v: number | null) =>
 export async function extract(userId: string, receiptId: string) {
   const receipt = await findOwned(receiptId, userId);
   const jpeg = await loadImage(receipt);
-  const ocrText = await ensureOcr(receipt, jpeg);
+  const [ocrText, book] = await Promise.all([
+    ensureOcr(receipt, jpeg),
+    loadBook(userId),
+  ]);
 
   let payload: Record<string, unknown> | null;
   let model: string;
   try {
-    ({ payload, model } = await ai.extractReceipt(jpeg, ocrText));
+    ({ payload, model } = await ai.extractReceipt(jpeg, ocrText, book.promptList()));
   } catch (err) {
     if (err instanceof ai.AIUnavailable) {
       await receipts.updateOne({ _id: receiptId }, { $set: { status: "failed" } });
@@ -149,11 +154,19 @@ export async function extract(userId: string, receiptId: string) {
       warnings: draft.warnings,
       ai_model: model,
       scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
+      unsupported: null,
     };
   }
 
   // เทียบกับเวลาที่อัปโหลดรูป ไม่ใช่เวลาที่กดปุ่ม ✨ (อาจกดทีหลังเป็นวันๆ)
   const draft = enrich(parseDraft(payload), receipt.createdAt);
+  // ชื่อหมวดที่ AI ตอบ -> id ของหมวดที่ผู้ใช้คนนี้เห็น (ตอบนอกรายการ = null ให้ผู้ใช้เลือกเอง)
+  // หมวดย่อยถูกส่งให้ AI เป็น "หลัก > ย่อย" จึงลองท่อนท้ายด้วยเผื่อโมเดลตอบมาทั้งก้อน
+  for (const item of draft.line_items) {
+    const guess = item.category_guess;
+    item.category_guess =
+      book.match(guess) ?? book.match(guess?.split(">").pop()) ?? null;
+  }
 
   await receipts.updateOne(
     { _id: receiptId },
@@ -178,6 +191,8 @@ export async function extract(userId: string, receiptId: string) {
      * (ถ้าคิดก่อน ตัวเลขที่โชว์กับตัวเลขที่ให้คะแนนอาจเป็นคนละชุด)
      */
     scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
+    /** สลิปโอนเงิน / บิลเขียนมือ / ไม่ใช่ใบเสร็จ — frontend เด้งป๊อปอัพเตือน (null = ปกติ) */
+    unsupported: unsupportedReason(draft),
   };
 }
 

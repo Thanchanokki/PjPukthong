@@ -8,7 +8,7 @@
  * index ที่ใช้กรองข้อมูลรายคนต้องมี userId นำหน้าเสมอ เพราะทุก query มี userId
  * เป็นเงื่อนไขแรกหลังบังคับล็อกอิน
  */
-import { receipts, transactions, users } from "./client.js";
+import { categories, receipts, transactions, users } from "./client.js";
 
 export async function ensureIndexes(): Promise<void> {
   // ฐานข้อมูลที่สร้างก่อนมีระบบล็อกอินยังค้าง unique index บน fileHash เดี่ยวอยู่
@@ -46,5 +46,10 @@ export async function ensureIndexes(): Promise<void> {
   await transactions.createIndex(
     { userId: 1, receiptId: 1 },
     { name: "transactions_user_receipt_id_idx" },
+  );
+  // ทุกคำขอโหลดหมวด "กลาง + ของตัวเอง" ด้วย userId: { $in: [null, userId] }
+  await categories.createIndex(
+    { userId: 1, sortOrder: 1 },
+    { name: "categories_user_sort_idx" },
   );
 }
