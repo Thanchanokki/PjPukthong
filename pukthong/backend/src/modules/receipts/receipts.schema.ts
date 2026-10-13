@@ -7,6 +7,8 @@
  */
 import { z } from "zod";
 
+import { matchMerchantType } from "../../shared/merchant-types.js";
+
 import {
   currencyField,
   decField,
@@ -38,6 +40,8 @@ const draftSchema = z.object({
   document_type: strField,
   handwritten: z.preprocess((v) => v === true, z.boolean()),
   merchant_name: strField,
+  /** ประเภทร้านที่ AI ตอบ -> id ที่รู้จัก (ตอบนอกรายการ = null ให้ผู้ใช้เลือกเอง) */
+  merchant_type: z.preprocess(matchMerchantType, z.string().nullable()),
   branch: strField,
   merchant_tax_id: strField,
   doc_number: strField,

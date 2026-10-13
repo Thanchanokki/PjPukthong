@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import sharp from "sharp";
 
 import { settings } from "../../config/index.js";
+import { merchantTypePrompt } from "../../shared/merchant-types.js";
 
 /**
  * prompt หลัก — รับรายชื่อหมวดเข้ามา เพราะแต่ละคนมีหมวดที่สร้างเองไม่เหมือนกัน
@@ -24,6 +25,9 @@ export const systemPrompt = (categoryList: string) => `คุณคือระ�
 - document_type เลือกจาก: TAX_INVOICE_FULL | TAX_INVOICE_ABB | RECEIPT | TRANSFER_SLIP | NOT_RECEIPT | OTHER
   TRANSFER_SLIP = สลิปโอนเงิน/หลักฐานการโอนจากแอปธนาคารหรือพร้อมเพย์ (ไม่ใช่ใบเสร็จของร้าน)
   NOT_RECEIPT = รูปที่ไม่ใช่เอกสารการซื้อขายเลย เช่น รูปคน อาหาร วิว หน้าจอแอปอื่น
+- merchant_type: ประเภทของ "ร้าน" ที่ออกใบนี้ (ทั้งใบ ไม่ใช่รายชิ้น) ตอบเป็น id จากรายการนี้เท่านั้น
+  ${merchantTypePrompt()}
+  ดูจากชื่อร้านเป็นหลัก ไม่ใช่สินค้าที่ซื้อ — ซื้อปากกาที่ 7-Eleven ก็ยังเป็น convenience
 - handwritten: true ถ้ารายการสินค้าหรือยอดเงินบนใบ "เขียนด้วยลายมือ" เช่น บิลเงินสดที่ร้านเขียนด้วยปากกา
   ใบที่พิมพ์จากเครื่องแต่มีแค่ลายเซ็น ตราประทับ หรือเลขจดเพิ่มด้วยมือ ให้ตอบ false
 - ถ้าราคามีตัวอักษรกำกับต่อท้าย (เช่น N) ให้เก็บไว้ในฟิลด์ flag ของรายการนั้น ห้ามตัดทิ้ง
@@ -51,6 +55,7 @@ export const systemPrompt = (categoryList: string) => `คุณคือระ�
   "document_type": "...",
   "handwritten": false,
   "merchant_name": "...",
+  "merchant_type": "convenience",
   "branch": "...",
   "merchant_tax_id": "...",
   "doc_number": "...",
@@ -233,4 +238,33 @@ export async function extractReceipt(
   }
 
   return { payload: parseJsonLoose(resp.choices[0].message?.content), model };
+}
+
+/**
+ * จัดประเภทร้านจาก "ชื่อร้าน" อย่างเดียว (ไม่ส่งรูป) — ใช้กับใบเก่าที่บันทึกไว้ก่อนมี
+ * merchant_type ส่งทีละหลายชื่อในคำขอเดียวเพื่อประหยัดการเรียก API
+ *
+ * คืน { ชื่อร้าน: id } — ชื่อที่ AI ตอบนอกรายการจะไม่อยู่ในผลลัพธ์ ผู้เรียกตัดสินใจเอง
+ */
+export async function classifyMerchants(names: string[]): Promise<Record<string, string>> {
+  if (names.length === 0) return {};
+  const resp = await client().chat.completions.create({
+    model: settings.kkuVisionModel,
+    temperature: 0,
+    stream: false,
+    messages: [
+      {
+        role: "system",
+        content:
+          "จัดประเภทร้านค้าไทยจากชื่อร้าน ตอบเป็น JSON object เท่านั้น ห้ามมีคำอธิบาย " +
+          'รูปแบบ {"<ชื่อร้านตามที่ให้มาเป๊ะๆ>": "<id>"} โดย id เลือกจากรายการนี้เท่านั้น:\n  ' +
+          merchantTypePrompt(),
+      },
+      { role: "user", content: JSON.stringify(names) },
+    ],
+  });
+  const parsed = parseJsonLoose(resp.choices[0]?.message?.content) ?? {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === "string"),
+  );
 }

@@ -116,6 +116,11 @@ export interface TransactionDoc {
    */
   direction: string;
   merchantName: string | null;
+  /**
+   * ประเภทร้านของทั้งใบ (ดู shared/merchant-types.ts) — null = ยังไม่ได้จัด
+   * คนละแกนกับหมวดสินค้ารายชิ้น: ใช้ทำงบแบบ "ตามประเภทร้าน"
+   */
+  merchantType?: string | null;
   branch: string | null;
   merchantTaxId: string | null;
   docNumber: string | null;
@@ -153,6 +158,30 @@ export interface TransactionDoc {
   note: string | null;
   verifiedByUser: boolean;
   items: TransactionItemDoc[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * วงเงินงบต่อหมวดต่อเดือน — 1 document = 1 หมวดใน 1 เดือนของผู้ใช้ 1 คน
+ *
+ * เก็บแค่ "วงเงิน" ส่วนยอดที่ใช้ไปไม่เก็บ คำนวณสดจาก transactions ทุกครั้ง
+ * (ชุดเดียวกับหน้ารายงาน) ตัวเลขสองหน้าจึงไม่มีทางไม่ตรงกัน
+ */
+export interface BudgetDoc {
+  _id: string;
+  userId: string;
+  /** 'YYYY-MM' */
+  month: string;
+  /**
+   * แกนของงบ — item = ตามหมวดสินค้า (categoryId คือ CategoryDoc._id หมวดหลัก)
+   * merchant = ตามประเภทร้าน (categoryId คือ id ใน shared/merchant-types.ts)
+   * document เก่าที่ไม่มีฟิลด์นี้ถือเป็น item
+   */
+  axis?: "item" | "merchant";
+  categoryId: string;
+  /** วงเงินเป็น string ทศนิยม 2 ตำแหน่ง ตามกติกาเรื่องเงินด้านบน */
+  limit: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -7,6 +7,7 @@
     "start": "tsx --env-file-if-exists=.env src/server.ts",
     "migrate": "tsx --env-file-if-exists=.env src/scripts/migrate.ts",
     "migrate:categories": "tsx --env-file-if-exists=.env src/scripts/migrate-categories.ts",
+    "migrate:merchant-types": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -7,7 +7,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 
-import { type Category, fetchCategories } from "./api";
+import { type Category, fetchCategories, fetchMerchantTypes } from "./api";
 
 /** ชื่อหมวดที่ระบบใช้รองรับเงินที่จัดกลุ่มไม่ได้ — dashboard อธิบายเพิ่มให้ผู้ใช้เข้าใจ */
 export const FALLBACK = "อื่นๆ";
@@ -21,6 +21,15 @@ export function useCategories() {
     queryFn: () => fetchCategories(false),
     // รายชื่อหมวดแทบไม่เปลี่ยน — ไม่ต้องยิงใหม่ทุกครั้งที่สลับหน้า
     staleTime: 5 * 60_000,
+  });
+}
+
+/** ประเภทร้าน (ชุดตายตัวของระบบ) — แทบไม่เปลี่ยน จึง cache ไว้ตลอด session */
+export function useMerchantTypes() {
+  return useQuery({
+    queryKey: ["merchant-types"],
+    queryFn: fetchMerchantTypes,
+    staleTime: Infinity,
   });
 }
 

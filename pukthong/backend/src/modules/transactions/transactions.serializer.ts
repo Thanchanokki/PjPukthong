@@ -3,6 +3,7 @@
  * (snake_case, id) ลำดับฟิลด์และชนิดข้อมูลต้องตรงกับ frontend/src/api.ts ทุกตัว
  */
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
+import { merchantTypeOf } from "../../shared/merchant-types.js";
 import type { CategoryBook } from "../categories/categories.service.js";
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
@@ -37,6 +38,9 @@ export function transactionOut(r: TransactionDoc, book: CategoryBook) {
     receipt_id: r.receiptId,
     direction: r.direction,
     merchant_name: r.merchantName,
+    merchant_type: r.merchantType ?? null,
+    /** ชื่อประเภทร้านไว้แสดงผล — ยังไม่ได้จัดจะได้ "ร้านอื่นๆ" */
+    merchant_type_name: merchantTypeOf(r.merchantType).name,
     branch: r.branch,
     merchant_tax_id: r.merchantTaxId,
     doc_number: r.docNumber,

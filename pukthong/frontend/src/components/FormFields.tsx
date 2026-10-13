@@ -5,7 +5,7 @@
  * re-render React จะ unmount/mount input ใหม่ทุกครั้งที่พิมพ์ แล้ว cursor จะหลุด
  */
 import type { LineItem } from "../api";
-import { groupCategories, labelOf, useCategories } from "../categories";
+import { groupCategories, labelOf, useCategories, useMerchantTypes } from "../categories";
 import { type Form, emptyItem } from "./TransactionForm";
 
 export function Field({
@@ -105,6 +105,7 @@ export function TransactionFields({
   warnSet?: Set<string>;
 }) {
   const warn = (k: string) => warnSet?.has(k) ?? false;
+  const { data: merchantTypes = [] } = useMerchantTypes();
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -115,6 +116,22 @@ export function TransactionFields({
           onChange={onChange("merchant_name")}
           warn={warn("merchant_name")}
         />
+      </div>
+      {/* ประเภทร้านของทั้งใบ — ใช้ทำงบ "ตามประเภทร้าน" (คนละเรื่องกับหมวดของสินค้ารายชิ้น) */}
+      <div className="col-span-2">
+        <label className="label">ประเภทร้าน</label>
+        <select
+          className={`field ${form.merchant_type ? "" : "field-warn"}`}
+          value={form.merchant_type}
+          onChange={(e) => onChange("merchant_type")(e.target.value)}
+        >
+          <option value="">— เลือกประเภทร้าน —</option>
+          {merchantTypes.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.icon} {t.name}
+            </option>
+          ))}
+        </select>
       </div>
       <Field label="สาขา" value={form.branch} onChange={onChange("branch")} />
       <Field

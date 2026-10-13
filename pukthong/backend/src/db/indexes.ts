@@ -8,7 +8,7 @@
  * index ที่ใช้กรองข้อมูลรายคนต้องมี userId นำหน้าเสมอ เพราะทุก query มี userId
  * เป็นเงื่อนไขแรกหลังบังคับล็อกอิน
  */
-import { categories, receipts, transactions, users } from "./client.js";
+import { budgets, categories, receipts, transactions, users } from "./client.js";
 
 export async function ensureIndexes(): Promise<void> {
   // ฐานข้อมูลที่สร้างก่อนมีระบบล็อกอินยังค้าง unique index บน fileHash เดี่ยวอยู่
@@ -51,5 +51,14 @@ export async function ensureIndexes(): Promise<void> {
   await categories.createIndex(
     { userId: 1, sortOrder: 1 },
     { name: "categories_user_sort_idx" },
+  );
+  // หมวดหนึ่งตั้งงบได้ครั้งเดียวต่อเดือนต่อแกน — upsert ใน budgets.service พึ่ง index นี้กันแถวซ้ำ
+  // (ตัวเก่าไม่มี axis ทำให้ตั้งงบ "ตามสินค้า" กับ "ตามร้าน" ที่ id ซ้ำกันไม่ได้ — ทิ้งก่อน)
+  await budgets.dropIndex("budgets_user_month_category_uq").catch(() => {});
+  // งบที่ตั้งไว้ก่อนมีแกน "ตามร้าน" คืองบตามสินค้าทั้งหมด — เติม axis ให้ query ใช้ค่าเดียวกันได้
+  await budgets.updateMany({ axis: { $exists: false } }, { $set: { axis: "item" } });
+  await budgets.createIndex(
+    { userId: 1, month: 1, axis: 1, categoryId: 1 },
+    { unique: true, name: "budgets_user_month_axis_category_uq" },
   );
 }

@@ -1,126 +1,87 @@
 /**
- * ข้อมูลงบประมาณ — ตอนนี้เป็น "ข้อมูลจำลอง" ทั้งหมด ยังไม่ต่อ backend
+ * งบประมาณ — ต่อ backend จริง (/api/budgets)
  *
- * ตอนต่อของจริง: เขียนฟังก์ชันชุดนี้ใหม่ให้ fetch ไป API แบบเดียวกับใน api.ts
- * (ใช้ handle() + authHeaders()) โดยคง signature เดิมไว้ — BudgetPage ไม่ต้องแก้เลย
- *
- * ยอด spent ฝั่ง backend ควรคิดจากสรุปชุดเดียวกับ Monthly.by_category (หมวดรายชิ้น
- * แกน purchased) เพื่อให้ตัวเลขหน้านี้ตรงกับหน้ารายงานเสมอ
- *
- * ⚠️ store เก็บใน memory — refresh หน้าแล้วงบที่แก้ไว้จะกลับเป็นค่าตั้งต้น
+ * วงเงินเก็บใน MongoDB collection `budgets` ส่วนยอด spent คำนวณสดที่ backend มีสองแกน:
+ * - "merchant" = ตามประเภทร้าน — ยอดทั้งใบเข้าประเภทของร้าน (7-Eleven = ร้านสะดวกซื้อ)
+ * - "item"     = ตามหมวดสินค้ารายชิ้น — ชุดเดียวกับหน้ารายงาน ตัวเลขจึงตรงกันเสมอ
+ * งบของสองแกนแยกกันคนละชุด ตั้งงบแกนหนึ่งไม่กระทบอีกแกน
  */
+import { API_BASE, authHeaders, handle } from "./api";
+
+export type BudgetAxis = "merchant" | "item";
 
 export type BudgetLine = {
+  /** id ของหมวดสินค้า หรือ id ของประเภทร้าน (ตามแกน) */
+  category_id: string;
+  /** ชื่อไว้แสดงผล — ใช้ category_id ทุกครั้งที่ส่งกลับไป backend */
   category: string;
-  /** null = หมวดนี้มีรายจ่ายในเดือนนั้น แต่ยังไม่ได้ตั้งงบ */
+  icon: string | null;
+  color: string | null;
+  /** null = มีรายจ่ายในเดือนนั้น แต่ยังไม่ได้ตั้งงบ */
   limit: string | null;
   spent: string;
-  /** จำนวนชิ้นของในหมวดนี้ (นับแบบเดียวกับ by_category.count) */
+  /** จำนวนรายการสินค้าในหมวดนี้ (ทั้งสองแกน) */
   count: number;
 };
 
+/** สิ่งที่ตั้งงบได้ในแกนนั้น (หมวดหลักทั้งหมด หรือประเภทร้านทั้งหมด) */
+export type BudgetOption = { id: string; name: string; icon: string | null; color: string | null };
+
 export type Budget = {
   month: string;
+  axis: BudgetAxis;
   lines: BudgetLine[];
+  options: BudgetOption[];
 };
 
-// รายชื่อหมวดให้เลือกตอนตั้งงบใหม่มาจาก useCategories() (หมวดหลักที่เปิดอยู่)
-// mock ด้านล่างจึงต้องใช้ชื่อเดียวกับหมวดกลางใน backend/src/shared/categories.ts
+const q = (axis: BudgetAxis) => (axis === "merchant" ? "by=merchant" : "by=item");
 
-// ---------------------------------------------------------------- mock
-
-const MOCK_SPENT: Record<string, { spent: number; count: number }> = {
-  "อาหาร": { spent: 6840.5, count: 42 },
-  "ของใช้ในบ้าน": { spent: 2310, count: 15 },
-  "เดินทาง": { spent: 1985.75, count: 11 },
-  "สุขภาพและยา": { spent: 1250, count: 4 },
-  "เสื้อผ้าและเครื่องประดับ": { spent: 3420, count: 6 },
-  "อื่นๆ": { spent: 480, count: 3 },
-};
-
-const DEFAULT_LIMITS: Record<string, number> = {
-  "อาหาร": 8000,
-  "ของใช้ในบ้าน": 2500,
-  "เดินทาง": 3000,
-  "เสื้อผ้าและเครื่องประดับ": 3000,
-};
-
-const store = new Map<string, Record<string, number>>();
-
-const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
-
-/** เวลาท้องถิ่น ไม่ใช่ toISOString() (UTC) — ไม่งั้นช่วงเช้ามืดเวลาไทยจะได้เดือนก่อนหน้า */
-const currentMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
-/** เดือนในอนาคตเริ่มแบบว่าง เพื่อให้ลองหน้าตา "ยังไม่ได้ตั้งงบ" ได้ */
-function limitsFor(month: string) {
-  let limits = store.get(month);
-  if (!limits) {
-    limits = month <= currentMonth() ? { ...DEFAULT_LIMITS } : {};
-    store.set(month, limits);
-  }
-  return limits;
-}
-
-/** ให้แต่ละเดือนได้ยอดไม่เท่ากัน สลับเดือนแล้วดูสมจริงขึ้น */
-function spentFor(month: string) {
-  if (month > currentMonth()) return {} as typeof MOCK_SPENT;
-  const m = Number(month.slice(5, 7)) || 1;
-  const scale = 0.7 + ((m * 37) % 50) / 100;
-  const out: typeof MOCK_SPENT = {};
-  for (const [category, { spent, count }] of Object.entries(MOCK_SPENT)) {
-    out[category] = {
-      spent: Math.round(spent * scale * 100) / 100,
-      count: Math.max(1, Math.round(count * scale)),
-    };
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------- API (mock)
-
-export async function fetchBudget(month: string): Promise<Budget> {
-  await delay();
-  const limits = limitsFor(month);
-  const spent = spentFor(month);
-  const categories = Array.from(
-    new Set([...Object.keys(limits), ...Object.keys(spent)]),
+export async function fetchBudget(month: string, axis: BudgetAxis = "merchant"): Promise<Budget> {
+  return handle(
+    await fetch(`${API_BASE}/api/budgets?month=${month}&${q(axis)}`, { headers: authHeaders() }),
   );
-  return {
-    month,
-    lines: categories.map((category) => ({
-      category,
-      limit: category in limits ? limits[category].toFixed(2) : null,
-      spent: (spent[category]?.spent ?? 0).toFixed(2),
-      count: spent[category]?.count ?? 0,
-    })),
-  };
 }
 
 export async function saveBudgetLimit(
   month: string,
-  category: string,
+  axis: BudgetAxis,
+  categoryId: string,
   limit: number,
 ): Promise<void> {
-  await delay();
   if (!(limit > 0)) throw new Error("วงเงินต้องมากกว่า 0 บาท");
-  limitsFor(month)[category] = limit;
+  return handle(
+    await fetch(`${API_BASE}/api/budgets/${month}/${categoryId}?${q(axis)}`, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ limit: limit.toFixed(2) }),
+    }),
+  );
 }
 
-export async function removeBudgetLimit(month: string, category: string): Promise<void> {
-  await delay();
-  delete limitsFor(month)[category];
+export async function removeBudgetLimit(
+  month: string,
+  axis: BudgetAxis,
+  categoryId: string,
+): Promise<void> {
+  return handle(
+    await fetch(`${API_BASE}/api/budgets/${month}/${categoryId}?${q(axis)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    }),
+  );
 }
 
-/** ใช้งบชุดเดียวกับเดือนอื่น — ทับงบที่มีอยู่ของเดือนปลายทางทั้งหมด */
-export async function copyBudget(fromMonth: string, toMonth: string): Promise<void> {
-  await delay();
-  const source = limitsFor(fromMonth);
-  if (Object.keys(source).length === 0) {
-    throw new Error("เดือนก่อนหน้ายังไม่ได้ตั้งงบไว้ ลองตั้งงบทีละหมวดแทน");
-  }
-  store.set(toMonth, { ...source });
+/** ใช้งบชุดเดียวกับเดือนอื่น (แกนเดียวกัน) — ทับงบที่มีอยู่ของเดือนปลายทางทั้งหมด */
+export async function copyBudget(
+  axis: BudgetAxis,
+  fromMonth: string,
+  toMonth: string,
+): Promise<void> {
+  return handle(
+    await fetch(`${API_BASE}/api/budgets/${toMonth}/copy?${q(axis)}`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ from_month: fromMonth }),
+    }),
+  );
 }
