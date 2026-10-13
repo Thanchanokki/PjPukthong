@@ -5,7 +5,7 @@
  * re-render React จะ unmount/mount input ใหม่ทุกครั้งที่พิมพ์ แล้ว cursor จะหลุด
  */
 import type { LineItem } from "../api";
-import { CATEGORIES } from "../categories";
+import { groupCategories, labelOf, useCategories } from "../categories";
 import { type Form, emptyItem } from "./TransactionForm";
 
 export function Field({
@@ -42,10 +42,11 @@ export function Field({
 
 /** รายรับ/รายจ่าย — AI ไม่ได้บอกมา ผู้ใช้เลือกเอง */
 /**
- * ดรอปดาวน์หมวด — เลือกจากชุดตายตัวเท่านั้น พิมพ์เองไม่ได้
+ * ดรอปดาวน์หมวด — เลือกจากหมวดที่มีอยู่เท่านั้น พิมพ์เองไม่ได้ ค่าที่ได้คือ id ของหมวด
  *
  * เดิมเป็นช่องพิมพ์อิสระ ซึ่งทำให้ "อาหาร" กับ "อาหารเช้า" กลายเป็นคนละหมวด
- * แล้ว dashboard รวมยอดข้ามเดือนไม่ได้ — ดู categories.ts
+ * แล้ว dashboard รวมยอดข้ามเดือนไม่ได้ — อยากได้หมวดใหม่ให้สร้างที่หน้า "หมวดหมู่"
+ * หมวดหลักที่มีหมวดย่อยแสดงเป็น <optgroup> แต่ตัวหมวดหลักเองก็ยังเลือกได้
  */
 export function CategorySelect({
   value,
@@ -58,6 +59,7 @@ export function CategorySelect({
   className?: string;
   label?: string;
 }) {
+  const { data: categories = [] } = useCategories();
   const select = (
     <select
       className={className}
@@ -65,11 +67,22 @@ export function CategorySelect({
       onChange={(e) => onChange(e.target.value)}
     >
       <option value="">— เลือกหมวด —</option>
-      {CATEGORIES.map((c) => (
-        <option key={c} value={c}>
-          {c}
-        </option>
-      ))}
+      {groupCategories(categories).map(({ root, children }) =>
+        children.length === 0 ? (
+          <option key={root.id} value={root.id}>
+            {labelOf(root)}
+          </option>
+        ) : (
+          <optgroup key={root.id} label={labelOf(root)}>
+            <option value={root.id}>{labelOf(root)} (ทั่วไป)</option>
+            {children.map((c) => (
+              <option key={c.id} value={c.id}>
+                {labelOf(c)}
+              </option>
+            ))}
+          </optgroup>
+        ),
+      )}
     </select>
   );
   if (!label) return select;
@@ -219,15 +232,15 @@ export function ItemsEditor({
   setItems: React.Dispatch<React.SetStateAction<LineItem[]>>;
   incomplete?: boolean;
 }) {
-  const patch = (i: number, key: "name" | "amount" | "qty" | "category", v: string) =>
+  const patch = (i: number, key: "name" | "amount" | "qty" | "category_id", v: string) =>
     setItems((xs) =>
       xs.map((x, j) =>
-        j === i ? { ...x, [key]: key === "category" && v === "" ? null : v } : x,
+        j === i ? { ...x, [key]: key === "category_id" && v === "" ? null : v } : x,
       ),
     );
 
   /** หมวดที่ AI เดามาใช้เป็นค่าตั้งต้น จนกว่าผู้ใช้จะแก้ */
-  const categoryOf = (it: LineItem) => it.category ?? it.category_guess ?? "";
+  const categoryOf = (it: LineItem) => it.category_id ?? it.category_guess ?? "";
 
   // แถวว่างที่ยังไม่ได้กรอกอะไรเลย (เพิ่งกด + เพิ่มรายการ) ไม่ควรถูกนับว่าเป็น
   // "รายการ" จริง — ตัวเลขในหัวข้อจึงนับเฉพาะแถวที่มีชื่อหรือยอดแล้วเท่านั้น
@@ -302,7 +315,7 @@ export function ItemsEditor({
                 <span className="text-xs text-slate-400">หมวด</span>
                 <CategorySelect
                   value={categoryOf(it)}
-                  onChange={(v) => patch(i, "category", v)}
+                  onChange={(v) => patch(i, "category_id", v)}
                   className={`field h-8 w-44 py-0 text-xs ${
                     categoryOf(it) ? "" : "field-warn"
                   }`}

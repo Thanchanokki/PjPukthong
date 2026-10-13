@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
+import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
@@ -38,8 +39,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function Shell() {
   return (
     <div className="min-h-screen">
-      {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่แถวเดียวกับโปรไฟล์ในหน้าหลัก (ข้างไอคอน
-          เฟือง) เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/สรุป/รายการ) อยู่ที่ bottom nav */}
+
 
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6">
@@ -51,6 +51,7 @@ function Shell() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monthly" element={<MonthlyPage />} />
            <Route path="/budget" element={<BudgetPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

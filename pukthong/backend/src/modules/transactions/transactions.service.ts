@@ -7,9 +7,9 @@ import { randomUUID } from "node:crypto";
 
 import { receipts, transactions } from "../../db/client.js";
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
-import { FALLBACK as FALLBACK_CATEGORY } from "../../shared/categories.js";
 import { httpError } from "../../shared/errors.js";
 import { Decimal, dec, moneyOut, quantize, sum } from "../../shared/money.js";
+import { type CategoryBook, loadBook } from "../categories/categories.service.js";
 import type { TransactionCreate } from "./transactions.schema.js";
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -27,8 +27,26 @@ function monthRange(month: string): [string, string] {
   return [start, end];
 }
 
+/**
+ * แปลงหมวดที่ client ส่งมาเป็น categoryId ที่ผู้ใช้คนนี้ใช้ได้จริง
+ *
+ * - category_id ต้องเป็นหมวดที่ผู้ใช้มองเห็น (หมวดที่ซ่อนแล้วยังรับ เพราะการแก้รายการเก่า
+ *   ที่อยู่ในหมวดนั้นต้องบันทึกได้โดยไม่ถูกบังคับให้ย้ายหมวด)
+ * - category (ชื่อ) ของ client รุ่นเก่า — จับคู่ไม่ได้ก็ถือว่ายังไม่ได้จัดหมวด
+ */
+function resolveCategory(
+  book: CategoryBook,
+  v: { category_id: string | null; category: string | null },
+): string | null {
+  if (v.category_id) {
+    if (!book.get(v.category_id)) throw httpError(422, "ไม่พบหมวดที่เลือก");
+    return v.category_id;
+  }
+  return book.match(v.category);
+}
+
 /** ฟิลด์ที่ผู้ใช้แก้ได้ — ใช้ร่วมกันทั้งตอน insert และ update */
-function toFields(payload: TransactionCreate) {
+function toFields(payload: TransactionCreate, book: CategoryBook) {
   return {
     // ระบบรายรับถูกตัดออก — ทุกอย่างที่บันทึกผ่าน API นี้คือรายจ่าย
     direction: "expense",
@@ -45,14 +63,14 @@ function toFields(payload: TransactionCreate) {
     vatRate: quantize(payload.vat_rate),
     vatAmount: quantize(payload.vat_amount),
     total: quantize(payload.total) as string,
-    category: payload.category,
+    categoryId: resolveCategory(book, payload),
     paymentMethod: payload.payment_method,
     paymentChannel: payload.payment_channel,
     note: payload.note,
   };
 }
 
-const itemDocs = (payload: TransactionCreate): TransactionItemDoc[] =>
+const itemDocs = (payload: TransactionCreate, book: CategoryBook): TransactionItemDoc[] =>
   payload.items.map((item, i) => ({
     lineNo: item.line_no ?? i + 1,
     name: item.name,
@@ -61,7 +79,7 @@ const itemDocs = (payload: TransactionCreate): TransactionItemDoc[] =>
     unitPrice: quantize(item.unit_price),
     amount: quantize(item.amount),
     flag: item.flag,
-    category: item.category,
+    categoryId: resolveCategory(book, item),
   }));
 
 /** บันทึกรายการที่ผู้ใช้ตรวจและยืนยันแล้ว — ไม่มีทางถูกเรียกอัตโนมัติ */
@@ -74,6 +92,11 @@ export async function create(
    * ต้องใช้ replica set ซึ่ง mongod เครื่องเดียวไม่มี — จึงอัปเดตสถานะใบเสร็จ
    * ก่อน แล้วค่อยเขียนรายการ (ตัวรายการเองเขียนครั้งเดียวจบจึง atomic อยู่แล้ว)
    */
+  // เช็คหมวดก่อนแตะใบเสร็จ — หมวดผิดต้องไม่ทำให้ใบเสร็จถูกตั้งเป็น confirmed ไปแล้ว
+  const book = await loadBook(userId);
+  const fields = toFields(payload, book);
+  const items = itemDocs(payload, book);
+
   let uploadedAt = new Date();
   if (payload.receipt_id) {
     const receipt = await receipts.findOneAndUpdate(
@@ -96,8 +119,8 @@ export async function create(
     receiptId: payload.receipt_id ?? null,
     verifiedByUser: true,
     uploadedAt,
-    ...toFields(payload),
-    items: itemDocs(payload),
+    ...fields,
+    items,
     createdAt: now,
     updatedAt: now,
   };
@@ -121,14 +144,15 @@ export async function update(
   id: string,
   payload: TransactionCreate,
 ): Promise<TransactionDoc> {
+  const book = await loadBook(userId);
   // แทนที่รายการย่อยทั้งชุด (เทียบเท่า cascade delete-orphan ของเดิม)
   const row = await transactions.findOneAndUpdate(
     { _id: id, userId },
     {
       // ไม่แตะ uploadedAt — นั่นคือเวลาที่ระบบ "รับรู้" รายการนี้ ไม่ใช่เวลาที่แก้ล่าสุด
       $set: {
-        ...toFields(payload),
-        items: itemDocs(payload),
+        ...toFields(payload, book),
+        items: itemDocs(payload, book),
         verifiedByUser: true,
         updatedAt: new Date(),
       },
@@ -179,24 +203,32 @@ export async function monthlySummary(
       ? { userId, uploadedAt: { $gte: new Date(`${start}T00:00:00.000Z`), $lt: new Date(`${end}T00:00:00.000Z`) } }
       : { userId, purchasedAt: { $gte: start, $lt: end } };
 
-  const rows = await transactions
-    .find(filter)
-    .sort(
-      axis === "uploaded"
-        ? { uploadedAt: -1, createdAt: -1 }
-        : { purchasedAt: -1, createdAt: -1 },
-    )
-    .toArray();
+  const [rows, book] = await Promise.all([
+    transactions
+      .find(filter)
+      .sort(
+        axis === "uploaded"
+          ? { uploadedAt: -1, createdAt: -1 }
+          : { purchasedAt: -1, createdAt: -1 },
+      )
+      .toArray(),
+    loadBook(userId),
+  ]);
 
   let expense = new Decimal(0);
   let expenseCount = 0;
-  /** ยอดต่อหมวด — key เป็นชื่อหมวด, count คือจำนวน "ชิ้นของ" ไม่ใช่จำนวนใบเสร็จ */
+  /**
+   * ยอดต่อหมวด — key เป็น id ของ "หมวดหลัก" (หมวดย่อยรวมขึ้นไปที่แม่)
+   * count คือจำนวน "ชิ้นของ" ไม่ใช่จำนวนใบเสร็จ
+   * id ที่ไม่รู้จักหรือ null ตกไปที่ FALLBACK ผ่าน book.rootOf
+   */
   const buckets = new Map<string, { total: Decimal; count: number }>();
   const byDay = new Map<string, Decimal>();
 
-  const add = (category: string, amount: Decimal, items: number) => {
-    const b = buckets.get(category) ?? { total: new Decimal(0), count: 0 };
-    buckets.set(category, { total: b.total.plus(amount), count: b.count + items });
+  const add = (categoryId: string | null, amount: Decimal, items: number) => {
+    const key = book.rootOf(categoryId)._id;
+    const b = buckets.get(key) ?? { total: new Decimal(0), count: 0 };
+    buckets.set(key, { total: b.total.plus(amount), count: b.count + items });
   };
 
   for (const r of rows) {
@@ -217,7 +249,7 @@ export async function monthlySummary(
     for (const item of r.items ?? []) {
       const amount = dec(item.amount);
       if (amount === null) continue;
-      add(item.category ?? FALLBACK_CATEGORY, amount, 1);
+      add(item.categoryId, amount, 1);
       itemsSum = itemsSum.plus(amount);
       counted++;
     }
@@ -225,7 +257,7 @@ export async function monthlySummary(
     if (counted === 0) {
       // ไม่มีรายการย่อยเลย (กรอกเอง หรือ AI อ่านบรรทัดไม่ออกสักบรรทัด)
       // ทั้งใบไปอยู่ในหมวดที่ผู้ใช้เลือกไว้ที่ระดับใบเสร็จ
-      add(r.category ?? FALLBACK_CATEGORY, total, 0);
+      add(r.categoryId, total, 0);
       continue;
     }
 
@@ -238,13 +270,23 @@ export async function monthlySummary(
      * ทำให้ยอดรายการรวมเกินยอดสุทธิ — ปล่อยให้ติดลบตามจริง ไม่กลบ)
      */
     const residual = total.minus(itemsSum);
-    if (!residual.isZero()) add(FALLBACK_CATEGORY, residual, 0);
+    if (!residual.isZero()) add(null, residual, 0);
   }
 
   const byCategory = [...buckets.entries()]
-    .map(([category, b]) => ({ category, total: b.total, count: b.count }))
-    .sort((a, b) => b.total.comparedTo(a.total))
-    .map((c) => ({ category: c.category, total: c.total.toFixed(2), count: c.count }));
+    .sort(([, a], [, b]) => b.total.comparedTo(a.total))
+    .map(([id, b]) => {
+      const c = book.get(id)!;
+      return {
+        category_id: id,
+        // คงชื่อฟิลด์ category (= ชื่อหมวด) ไว้ หน้าที่แสดงผลอยู่แล้วจะได้ไม่ต้องแก้
+        category: c.name,
+        icon: c.icon,
+        color: c.color,
+        total: b.total.toFixed(2),
+        count: b.count,
+      };
+    });
 
   const byDayOut = [...byDay.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -258,6 +300,7 @@ export async function monthlySummary(
     by_category: byCategory,
     by_day: byDayOut,
     rows,
+    book,
   };
 }
 

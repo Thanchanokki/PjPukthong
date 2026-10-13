@@ -1,20 +1,13 @@
 // ทุก request วิ่งผ่าน backend ของเราเสมอ — frontend ไม่เคยถือ KKU_API_KEY
 
 /**
- * ที่อยู่ backend — เดาจาก host ที่ browser เปิดอยู่ ถ้าไม่ได้ตั้ง VITE_API_BASE ไว้
+ * ที่อยู่ backend — ค่าว่าง = origin เดียวกับหน้าเว็บ ถ้าไม่ได้ตั้ง VITE_API_BASE ไว้
  *
- * ห้าม fallback เป็น "localhost" เด็ดขาด: โค้ดนี้ทำงานใน browser ของผู้ใช้ พอเปิด
- * จากมือถือ localhost จะหมายถึงตัวมือถือเอง แล้วยิง API ไม่เจอทั้งแอป
- *
- * ใช้ hostname ที่เปิดอยู่แทน จึงถูกเสมอทั้งตอนเปิด localhost:3000 บนเครื่อง และตอน
- * เปิด 192.168.x.x:3000 จากมือถือ — และไม่พังอีกเมื่อเราเตอร์แจก IP ใหม่ให้เครื่อง
+ * vite proxy ส่ง /api ต่อให้ backend (ดู vite.config.ts) จึงถูกเสมอทั้งตอนเปิด
+ * localhost:3000, เปิด 192.168.x.x:3000 จากมือถือใน LAN และเปิดผ่าน tunnel
+ * จากเน็ตมือถือ — ห้ามใส่ "localhost" ตรงนี้ เพราะบนมือถือมันคือตัวมือถือเอง
  */
-const guessApiBase = () => {
-  if (typeof window === "undefined") return "http://localhost:8000";
-  return `${window.location.protocol}//${window.location.hostname}:8000`;
-};
-
-export const API_BASE = import.meta.env.VITE_API_BASE || guessApiBase();
+export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 /**
  * JWT เก็บใน localStorage เพื่อให้ยังล็อกอินค้างหลังปิดแท็บ
@@ -57,10 +50,35 @@ export type LineItem = {
   unit_price: string | null;
   amount: string | null;
   flag: string | null;
-  /** หมวดที่ AI เดาให้ตอนสแกน — เป็นค่าตั้งต้นของ category */
+  /** id ของหมวดที่ AI เดาให้ตอนสแกน — เป็นค่าตั้งต้นของ category_id */
   category_guess?: string | null;
-  /** หมวดที่ผู้ใช้ยืนยัน — ตัวนี้เท่านั้นที่ถูกบันทึกและใช้สรุปใน dashboard */
+  /** id ของหมวดที่ผู้ใช้ยืนยัน — ตัวนี้เท่านั้นที่ถูกบันทึกและใช้สรุปใน dashboard */
+  category_id?: string | null;
+  /** ชื่อหมวด (backend ส่งมาให้แสดงผล อ่านอย่างเดียว) */
   category?: string | null;
+  /** ชื่อหมวดหลักที่ใช้จัดกลุ่มในรายงาน — หมวดย่อยรวมขึ้นไปที่แม่ (อ่านอย่างเดียว) */
+  category_root?: string;
+};
+
+/** หมวดค่าใช้จ่าย — หมวดกลางของระบบ (is_system) + หมวดที่ผู้ใช้สร้างเอง */
+export type Category = {
+  id: string;
+  name: string;
+  /** หมวดย่อยชี้ไปหมวดหลัก (ลึกได้ชั้นเดียว) */
+  parent_id: string | null;
+  icon: string | null;
+  color: string | null;
+  sort_order: number;
+  is_active: boolean;
+  is_system: boolean;
+};
+
+export type CategoryInput = {
+  name?: string;
+  parent_id?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  is_active?: boolean;
 };
 
 export type ReceiptDraft = {
@@ -121,12 +139,21 @@ export type ScanConfidence = {
   checks: ScanCheck[];
 };
 
+/** เอกสารที่ระบบไม่รองรับ — backend ตัดสินจากผลที่ AI อ่าน (ดู receipts.support.ts) */
+export type Unsupported = {
+  kind: "transfer_slip" | "handwritten" | "not_receipt";
+  title: string;
+  message: string;
+};
+
 export type ExtractResult = {
   receipt_id: string;
   draft: ReceiptDraft;
   warnings: string[];
   ai_model: string;
   scan_confidence: ScanConfidence;
+  /** null = เอกสารปกติ */
+  unsupported: Unsupported | null;
 };
 
 export type Transaction = {
@@ -148,7 +175,10 @@ export type Transaction = {
   vat_rate: string | null;
   vat_amount: string | null;
   total: string;
+  category_id: string | null;
+  /** ชื่อหมวด — backend เปิดหาจาก category_id ให้ */
   category: string | null;
+  category_root: string;
   payment_method: string | null;
   payment_channel: string | null;
   note: string | null;
@@ -169,7 +199,15 @@ export type Monthly = {
    * ยอดต่อหมวด เรียงจากมากไปน้อย — สรุปจากหมวด "รายชิ้น" ไม่ใช่หมวดของทั้งใบ
    * count คือจำนวนชิ้นของในหมวดนั้น ผลรวม total ทุกหมวด = expense_total เสมอ
    */
-  by_category: { category: string; total: string; count: number }[];
+  by_category: {
+    category_id: string;
+    /** ชื่อหมวดหลัก (หมวดย่อยถูกรวมขึ้นไปที่หมวดหลักแล้ว) */
+    category: string;
+    icon: string | null;
+    color: string | null;
+    total: string;
+    count: number;
+  }[];
   by_day: { date: string; total: string }[];
   transactions: Transaction[];
 };
@@ -259,6 +297,32 @@ export async function deleteTransaction(id: string): Promise<void> {
     await fetch(`${API_BASE}/api/transactions/${id}`, {
       method: "DELETE",
       headers: authHeaders(),
+    }),
+  );
+}
+
+/** includeInactive ใช้ในหน้าจัดการหมวด — ที่อื่นเห็นเฉพาะหมวดที่เปิดอยู่ */
+export async function fetchCategories(includeInactive = false): Promise<Category[]> {
+  const q = includeInactive ? "?include_inactive=1" : "";
+  return handle(await fetch(`${API_BASE}/api/categories${q}`, { headers: authHeaders() }));
+}
+
+export async function createCategory(input: CategoryInput): Promise<Category> {
+  return handle(
+    await fetch(`${API_BASE}/api/categories`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateCategory(id: string, input: CategoryInput): Promise<Category> {
+  return handle(
+    await fetch(`${API_BASE}/api/categories/${id}`, {
+      method: "PATCH",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
     }),
   );
 }

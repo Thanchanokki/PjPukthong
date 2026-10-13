@@ -5,11 +5,15 @@
  * ถ้าโมเดลที่ตั้งไว้ไม่รับ image_url ให้เปลี่ยน KKU_VISION_MODEL ใน .env — อย่าแก้ไฟล์นี้
  */
 import OpenAI from "openai";
+import sharp from "sharp";
 
 import { settings } from "../../config/index.js";
-import { promptList as categoryList } from "../../shared/categories.js";
 
-export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อมูลจากใบเสร็จ ใบกำกับภาษี และสลิปโอนเงินของไทย
+/**
+ * prompt หลัก — รับรายชื่อหมวดเข้ามา เพราะแต่ละคนมีหมวดที่สร้างเองไม่เหมือนกัน
+ * AI ต้องเห็นหมวดของผู้ใช้คนนั้นด้วย ไม่งั้นหมวดที่สร้างเองจะไม่มีวันถูกเลือก
+ */
+export const systemPrompt = (categoryList: string) => `คุณคือระบบดึงข้อมูลจากใบเสร็จ ใบกำกับภาษี และสลิปโอนเงินของไทย
 ตอบกลับเป็น JSON ที่ parse ได้เท่านั้น ห้ามมี markdown fence หรือคำอธิบายใดๆ
 
 กฎเหล็ก:
@@ -17,10 +21,15 @@ export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อ�
 - ตัวเลขทุกค่าให้คงตามที่พิมพ์บนใบเสร็จ ห้ามคำนวณหรือปัดเศษเอง
 - วันที่: ถ้าปีเป็น พ.ศ. (มากกว่า 2400 หรือเลข 2 หลักที่ตีความเป็น พ.ศ. ได้) ให้แปลงเป็น ค.ศ. โดยลบ 543 แล้วส่งรูปแบบ YYYY-MM-DD
 - ถ้ามีเลขอ้างอิงที่ขึ้นต้นด้วยวันที่แบบ ค.ศ. (เช่น TID) ให้ใช้ไขว้ตรวจสอบวันที่ที่แปลงมา
-- document_type เลือกจาก: TAX_INVOICE_FULL | TAX_INVOICE_ABB | RECEIPT | TRANSFER_SLIP | OTHER
+- document_type เลือกจาก: TAX_INVOICE_FULL | TAX_INVOICE_ABB | RECEIPT | TRANSFER_SLIP | NOT_RECEIPT | OTHER
+  TRANSFER_SLIP = สลิปโอนเงิน/หลักฐานการโอนจากแอปธนาคารหรือพร้อมเพย์ (ไม่ใช่ใบเสร็จของร้าน)
+  NOT_RECEIPT = รูปที่ไม่ใช่เอกสารการซื้อขายเลย เช่น รูปคน อาหาร วิว หน้าจอแอปอื่น
+- handwritten: true ถ้ารายการสินค้าหรือยอดเงินบนใบ "เขียนด้วยลายมือ" เช่น บิลเงินสดที่ร้านเขียนด้วยปากกา
+  ใบที่พิมพ์จากเครื่องแต่มีแค่ลายเซ็น ตราประทับ หรือเลขจดเพิ่มด้วยมือ ให้ตอบ false
 - ถ้าราคามีตัวอักษรกำกับต่อท้าย (เช่น N) ให้เก็บไว้ในฟิลด์ flag ของรายการนั้น ห้ามตัดทิ้ง
 - category_guess: จัดหมวดค่าใช้จ่ายให้ของ "ทุกชิ้น" โดยเลือกจากรายการนี้เท่านั้น ห้ามคิดชื่อหมวดขึ้นมาเอง
   ${categoryList}
+  หมวดที่เขียนแบบ "หลัก > ย่อย" ให้ตอบเฉพาะชื่อหมวดย่อย และเลือกหมวดย่อยเมื่อเข้ากับสินค้าชัดเจน
   ดูจากตัวสินค้าเป็นหลัก ไม่ใช่ประเภทร้าน — ซื้อแชมพูจากร้านสะดวกซื้อคือ "ของใช้ส่วนตัว" ไม่ใช่ "อาหาร"
   ตัวอย่าง: นม/ขนมปัง/ข้าวกล่อง -> อาหาร | น้ำเปล่า/กาแฟ/น้ำอัดลม -> เครื่องดื่ม
   น้ำยาล้างจาน/ทิชชู่/ถุงขยะ -> ของใช้ในบ้าน | ยาสีฟัน/แชมพู/ผ้าอนามัย -> ของใช้ส่วนตัว
@@ -40,6 +49,7 @@ export const SYSTEM_PROMPT = `คุณคือระบบดึงข้อ�
 โครงสร้าง JSON ที่ต้องส่งกลับ:
 {
   "document_type": "...",
+  "handwritten": false,
   "merchant_name": "...",
   "branch": "...",
   "merchant_tax_id": "...",
@@ -83,6 +93,31 @@ export const ocrPrompt = (ocrText: string) =>
 --- เริ่มข้อความ OCR ---
 ${ocrText}
 --- จบข้อความ OCR ---`;
+
+/**
+ * เพดานขนาดรูปที่ส่งให้ AI — nginx ของ KKU ตอบ 413 เมื่อ body เกินราว 1MB
+ * (รูป 866KB กลายเป็น base64 ~1.15MB แล้วโดนปฏิเสธ) จึงคุมไว้ที่ 600KB ก่อนแปลง base64
+ */
+const AI_MAX_BYTES = 600 * 1024;
+
+/**
+ * ย่อรูปเฉพาะที่ส่งให้ AI — รูปที่เก็บและที่ส่ง OCR ยังเป็นความละเอียดเต็ม
+ *
+ * AI ใช้รูปดูแค่โครงสร้าง (บรรทัดไหนคือยอดรวม) ค่าตัวเลขเอาจาก OCR อยู่แล้ว
+ * จึงลดความละเอียดได้โดยไม่เสียความแม่นยำของตัวเลข
+ */
+async function shrinkForAi(jpegBytes: Buffer): Promise<Buffer> {
+  if (jpegBytes.length <= AI_MAX_BYTES) return jpegBytes;
+  let out = jpegBytes;
+  for (const side of [1600, 1280, 1024]) {
+    out = await sharp(jpegBytes)
+      .resize({ width: side, height: side, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    if (out.length <= AI_MAX_BYTES) break;
+  }
+  return out;
+}
 
 /** เรียก API ไม่สำเร็จ (key ผิด เน็ตล่ม โมเดลไม่รับรูป) — ข้อความเป็นภาษาไทย */
 export class AIUnavailable extends Error {}
@@ -158,9 +193,10 @@ export function parseJsonLoose(text: string | null | undefined): Record<string, 
 export async function extractReceipt(
   jpegBytes: Buffer,
   ocrText: string | null = null,
+  categoryList = "",
 ): Promise<{ payload: Record<string, unknown> | null; model: string }> {
   const model = settings.kkuVisionModel;
-  const b64 = jpegBytes.toString("base64");
+  const b64 = (await shrinkForAi(jpegBytes)).toString("base64");
 
   let resp;
   try {
@@ -169,7 +205,7 @@ export async function extractReceipt(
       temperature: 0,
       stream: false,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt(categoryList) },
         {
           role: "user",
           content: [

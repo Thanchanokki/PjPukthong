@@ -2,7 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { type Monthly, baht, fetchMonthly, fetchMonths } from "../api";
+import { type Monthly, type Transaction, baht, fetchMonthly, fetchMonths, imageUrl } from "../api";
 import { FALLBACK } from "../categories";
 
 /**
@@ -93,6 +93,8 @@ type Summary = {
   receipts: number;
   categories: CategoryTotal[];
   byDay: Map<string, number>;
+  /** ใบเสร็จในช่วงที่เลือก — ใช้เปิดดูว่าแต่ละหมวดมีสินค้าชิ้นไหนบ้าง */
+  txs: Transaction[];
 };
 
 function summarize(view: View, start: string, end: string, data: Monthly[]): Summary {
@@ -107,6 +109,7 @@ function summarize(view: View, start: string, end: string, data: Monthly[]): Sum
         count: c.count,
       })),
       byDay: new Map(d.by_day.map((x) => [x.date, Number(x.total)])),
+      txs: d.transactions,
     };
   }
 
@@ -134,11 +137,12 @@ function summarize(view: View, start: string, end: string, data: Monthly[]): Sum
       const amount = Number(item.amount ?? 0);
       if (!amount) continue;
       itemsSum += amount;
-      add(item.category ?? FALLBACK, amount, 1);
+      // จัดกลุ่มตามหมวดหลัก ให้ตรงกับที่ backend สรุปในมุมมองรายเดือน
+      add(item.category_root ?? FALLBACK, amount, 1);
     }
     // VAT ส่วนลด ค่าบริการ ฯลฯ ที่ไม่อยู่ในรายชิ้น — ทำให้ผลรวมทุกหมวด = ยอดรวมเสมอ
     const rest = Math.round((txTotal - itemsSum) * 100) / 100;
-    if (rest !== 0) add(tx.items.length ? FALLBACK : (tx.category ?? FALLBACK), rest, 0);
+    if (rest !== 0) add(tx.items.length ? FALLBACK : (tx.category_root ?? FALLBACK), rest, 0);
   }
 
   return {
@@ -148,8 +152,105 @@ function summarize(view: View, start: string, end: string, data: Monthly[]): Sum
       (a, b) => b.total - a.total,
     ),
     byDay,
+    txs,
   };
 }
+
+// ---------------------------------------------------------------- ของในแต่ละหมวด
+
+type ItemRow = {
+  key: string;
+  name: string;
+  /** หมวดย่อยที่ชิ้นนี้อยู่ (ถ้าไม่ใช่ตัวหมวดหลักเอง) */
+  sub: string | null;
+  merchant: string | null;
+  date: string;
+  amount: number;
+  receiptId: string | null;
+};
+
+/**
+ * สินค้าทุกชิ้นที่ถูกนับเข้าหมวดนี้ — ใช้กติกาเดียวกับตอนรวมยอด ผลรวมจึงเท่ากับยอดหมวดเสมอ
+ *
+ * ช่อง "อื่นๆ" มีส่วนต่างระดับใบ (VAT ท้ายบิล ส่วนลด ค่าบริการ) ปนอยู่ด้วย
+ * จึงแสดงเป็นบรรทัดแยกต่อใบ ไม่งั้นผู้ใช้จะหาไม่เจอว่ายอดหมวดนี้มาจากไหน
+ */
+function itemsIn(txs: Transaction[], category: string): ItemRow[] {
+  const rows: ItemRow[] = [];
+  for (const tx of txs) {
+    let itemsSum = 0;
+    for (const it of tx.items) {
+      const amount = Number(it.amount ?? 0);
+      if (!amount) continue;
+      itemsSum += amount;
+      if ((it.category_root ?? FALLBACK) !== category) continue;
+      rows.push({
+        key: `${tx.id}-${it.id}`,
+        name: it.name ?? "(ไม่มีชื่อรายการ)",
+        sub: it.category && it.category !== category ? it.category : null,
+        merchant: tx.merchant_name,
+        date: tx.purchased_at,
+        amount,
+        receiptId: tx.receipt_id,
+      });
+    }
+    const rest = Math.round((Number(tx.total) - itemsSum) * 100) / 100;
+    const restCategory = tx.items.length ? FALLBACK : (tx.category_root ?? FALLBACK);
+    if (rest !== 0 && restCategory === category) {
+      rows.push({
+        key: `${tx.id}-rest`,
+        name: tx.items.length ? "ส่วนต่างท้ายบิล (VAT/ส่วนลด/ค่าบริการ)" : "ทั้งใบ (ไม่มีรายการย่อย)",
+        sub: null,
+        merchant: tx.merchant_name,
+        date: tx.purchased_at,
+        amount: rest,
+        receiptId: tx.receipt_id,
+      });
+    }
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount);
+}
+
+function CategoryItems({ txs, category }: { txs: Transaction[]; category: string }) {
+  const rows = itemsIn(txs, category);
+  if (rows.length === 0) {
+    return <p className="mt-3 pl-7 text-xs text-ink/40">ไม่มีรายการ</p>;
+  }
+  return (
+    <ul className="mt-3 space-y-2.5 pl-7">
+      {rows.map((r) => (
+        <li key={r.key} className="flex items-start gap-3 text-xs">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-ink/75">
+              {r.name}
+              {r.sub && <span className="ml-1.5 text-ink/40">· {r.sub}</span>}
+            </p>
+            <p className="truncate text-ink/40">
+              {thaiDate(r.date)}
+              {r.merchant && ` · ${r.merchant}`}
+              {/* เปิดรูปในแท็บใหม่ ไม่ใช่ /review — หน้านั้นเปิดตรงๆ จะเป็นฟอร์มว่างรอสแกนใหม่
+                  ถ้าผู้ใช้กดบันทึกจะได้รายการซ้ำ */}
+              {r.receiptId && (
+                <a
+                  href={imageUrl(r.receiptId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-1.5 underline underline-offset-2 hover:text-ink/70"
+                >
+                  ดูรูปใบเสร็จ
+                </a>
+              )}
+            </p>
+          </div>
+          <span className="shrink-0 tabular-nums text-ink/70">{baht(r.amount)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const thaiDate = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
 // ---------------------------------------------------------------- สีของโดนัท
 
@@ -473,14 +574,22 @@ function Breakdown({ summary }: { summary: Summary }) {
 
       <ul className="mt-8 divide-y divide-kraft/70">
         {slices.map((s) => (
-          <LegendRow key={s.key} slice={s} pct={pct} />
+          <LegendRow key={s.key} slice={s} pct={pct} txs={summary.txs} />
         ))}
       </ul>
     </section>
   );
 }
 
-function LegendRow({ slice, pct }: { slice: Slice; pct: (n: number) => number }) {
+function LegendRow({
+  slice,
+  pct,
+  txs,
+}: {
+  slice: Slice;
+  pct: (n: number) => number;
+  txs: Transaction[];
+}) {
   const [open, setOpen] = useState(false);
   const grouped = !!slice.members;
 
@@ -489,9 +598,9 @@ function LegendRow({ slice, pct }: { slice: Slice; pct: (n: number) => number })
       <span className={`h-3 w-3 shrink-0 rounded-sm ${slice.color.swatch}`} aria-hidden />
       <span className="min-w-0 flex-1 truncate text-ink/75">
         {slice.label}
-        {grouped && (
-          <span className="ml-1 text-xs text-ink/40">{open ? "ซ่อน" : "ดูทั้งหมด"}</span>
-        )}
+        <span className="ml-1 text-xs text-ink/40">
+          {open ? "ซ่อน" : grouped ? "ดูทั้งหมด" : `${slice.count} ชิ้น`}
+        </span>
       </span>
       <span className="w-12 text-right tabular-nums text-ink/50">{pct(slice.total)}%</span>
       <span className="w-20 text-right font-medium tabular-nums" title={`฿${baht(slice.total)}`}>
@@ -502,29 +611,22 @@ function LegendRow({ slice, pct }: { slice: Slice; pct: (n: number) => number })
 
   return (
     <li className="py-4">
-      {grouped ? (
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className={`flex w-full items-center gap-4 text-left text-sm ${focusRing}`}
-        >
-          {row}
-        </button>
-      ) : (
-        <div className="flex items-center gap-4 text-sm">{row}</div>
-      )}
+      {/* ทุกแถวกดได้: หมวดเดี่ยวเปิดดูสินค้าที่สแกนมา, แถว "อีก N หมวด" เปิดดูหมวดที่ถูกรวมไว้ */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`flex w-full items-center gap-4 text-left text-sm ${focusRing}`}
+      >
+        {row}
+      </button>
+
+      {!grouped && open && <CategoryItems txs={txs} category={slice.label} />}
 
       {grouped && open && (
         <ul className="mt-3 space-y-2 pl-7">
           {slice.members!.map((m) => (
-            <li key={m.category} className="flex items-center gap-4 text-xs">
-              <span className="min-w-0 flex-1 truncate text-ink/60">{m.category}</span>
-              <span className="w-12 text-right tabular-nums text-ink/45">{pct(m.total)}%</span>
-              <span className="w-20 text-right tabular-nums text-ink/70" title={`฿${baht(m.total)}`}>
-                {whole(m.total)}
-              </span>
-            </li>
+            <MemberRow key={m.category} member={m} pct={pct} txs={txs} />
           ))}
         </ul>
       )}
@@ -534,6 +636,39 @@ function LegendRow({ slice, pct }: { slice: Slice; pct: (n: number) => number })
           {FALLBACK} รวม VAT ส่วนลด และของที่ยังไม่ได้เลือกหมวด
         </p>
       )}
+    </li>
+  );
+}
+
+/** หมวดที่ถูกรวมอยู่ในแถว "อีก N หมวด" — กดเปิดดูสินค้าของหมวดนั้นได้เหมือนแถวปกติ */
+function MemberRow({
+  member: m,
+  pct,
+  txs,
+}: {
+  member: CategoryTotal;
+  pct: (n: number) => number;
+  txs: Transaction[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={`flex w-full items-center gap-4 text-left text-xs ${focusRing}`}
+      >
+        <span className="min-w-0 flex-1 truncate text-ink/60">
+          {m.category}
+          <span className="ml-1 text-ink/35">{open ? "ซ่อน" : `${m.count} ชิ้น`}</span>
+        </span>
+        <span className="w-12 text-right tabular-nums text-ink/45">{pct(m.total)}%</span>
+        <span className="w-20 text-right tabular-nums text-ink/70" title={`฿${baht(m.total)}`}>
+          {whole(m.total)}
+        </span>
+      </button>
+      {open && <CategoryItems txs={txs} category={m.category} />}
     </li>
   );
 }

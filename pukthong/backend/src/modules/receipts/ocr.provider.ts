@@ -20,10 +20,14 @@ import { settings } from "../../config/index.js";
 const TIMEOUT_MS = 20_000;
 
 /**
- * ด้านยาวสุดของรูปที่ส่งให้ OCR — รูปจาก iPhone เต็มขนาดใหญ่หลาย MB จน Typhoon ตอบ 400
- * 1600px ยังอ่านตัวอักษรเล็กบนใบเสร็จได้ชัด (ทดสอบกับใบ H&M แล้ว)
+ * ด้านยาวของรูปที่ส่งให้ OCR — ปรับ "ให้เท่านี้พอดี" ทั้งย่อและขยาย
+ *
+ * ใบเสร็จมักกินพื้นที่แค่ 1/3 ของรูป ตัวเลขจึงเหลือไม่กี่พิกเซล ถ้าส่งรูปเล็กไป
+ * โมเดลจะสับ 6/9, 2/3 (ใบ H&M ที่ 1600px อ่าน 699 เป็น 669, 249 เป็น 349)
+ * การขยายช่วยให้โมเดลแบ่งตัวอักษรเป็นชิ้นได้ละเอียดขึ้น ส่วนเพดานกันรูป iPhone
+ * เต็มขนาดหลาย MB ที่ทำให้ Typhoon ตอบ 400 — ที่ 2400px รูปเหลือไม่เกิน ~800KB
  */
-const OCR_MAX_SIDE = 1600;
+const OCR_LONG_SIDE = 2400;
 
 /**
  * prompt มาตรฐานของ Typhoon OCR
@@ -88,17 +92,23 @@ export async function readText(jpegBytes: Buffer): Promise<OcrResult> {
   if (!isEnabled()) return EMPTY;
 
   try {
-    // ย่อเฉพาะรูปที่ส่ง OCR — ไม่แตะรูปต้นฉบับที่เก็บไว้หรือที่ส่งให้ AI
-    const small = await sharp(jpegBytes)
-      .resize({ width: OCR_MAX_SIDE, height: OCR_MAX_SIDE, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 85 })
+    // ปรับเฉพาะรูปที่ส่ง OCR — ไม่แตะรูปต้นฉบับที่เก็บไว้หรือที่ส่งให้ AI
+    // ขาวดำ + ยืดคอนทราสต์ ช่วยใบความร้อนที่ซีดจาง และตัดสีพื้นหลังที่ไม่เกี่ยวออก
+    // (ทดสอบแล้ว: ขยายอย่างเดียวยังอ่าน 699 เป็น 659 ต้องมีขั้นนี้ด้วยถึงอ่านถูก)
+    const prepared = await sharp(jpegBytes)
+      .resize({ width: OCR_LONG_SIDE, height: OCR_LONG_SIDE, fit: "inside" })
+      .greyscale()
+      .normalise()
+      .jpeg({ quality: 90 })
       .toBuffer();
-    const image = `data:image/jpeg;base64,${small.toString("base64")}`;
+    const image = `data:image/jpeg;base64,${prepared.toString("base64")}`;
 
     const response = await client().chat.completions.create({
       model: settings.typhoonOcrModel,
       // เอกสารของ Typhoon แนะนำไม่ให้ใช้ temperature สูงกับโมเดล OCR
       temperature: 0.1,
+      // ใบยาวที่มีตารางหลายบรรทัดถูกถอดเป็น HTML ยาวมาก — กันคำตอบถูกตัดกลางใบ
+      max_tokens: 8000,
       stream: false,
       messages: [
         {

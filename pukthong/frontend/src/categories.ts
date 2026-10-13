@@ -1,26 +1,37 @@
 /**
- * หมวดค่าใช้จ่าย — ต้องตรงกับ backend/src/shared/categories.ts เป๊ะ
+ * หมวดค่าใช้จ่าย — ดึงจาก backend (GET /api/categories) ไม่ได้ประกาศตายตัวในโค้ดแล้ว
  *
- * ประกาศซ้ำที่นี่เพราะ frontend กับ backend ไม่ได้ใช้ shared package ร่วมกัน
- * (ทั้งโปรเจกต์ประสานกันด้วยข้อตกลงที่เขียนคอมเมนต์กำกับไว้ ไม่ใช่ codegen)
- * แก้ที่ไหนต้องแก้อีกที่เสมอ ไม่งั้นหมวดที่เลือกในฟอร์มจะถูก backend ปัดเป็น null
+ * ผู้ใช้สร้างหมวดเองได้ รายชื่อจึงต่างกันไปแต่ละคน และ backend เป็นที่เดียวที่รู้ครบ
+ * ทุกที่ที่ต้องใช้รายชื่อหมวด (ดรอปดาวน์ หน้างบ หน้าจัดการหมวด) ใช้ hook ตัวนี้
+ * จึงแชร์ cache ก้อนเดียว — สร้างหมวดใหม่แล้ว invalidate ทีเดียวเห็นทุกหน้า
  */
-export const CATEGORIES = [
-  "อาหาร",
-  "เครื่องดื่ม",
-  "ของใช้ในบ้าน",
-  "ของใช้ส่วนตัว",
-  "สุขภาพและยา",
-  "เดินทาง",
-  "ช้อปปิ้ง",
-  "บิลและบริการ",
-  "การศึกษา",
-  "สัตว์เลี้ยง",
-  "บันเทิง",
-  "อื่นๆ",
-] as const;
+import { useQuery } from "@tanstack/react-query";
 
-export type Category = (typeof CATEGORIES)[number];
+import { type Category, fetchCategories } from "./api";
 
-/** หมวดที่ระบบใช้รองรับเงินที่จัดกลุ่มไม่ได้ — dashboard อธิบายเพิ่มให้ผู้ใช้เข้าใจ */
+/** ชื่อหมวดที่ระบบใช้รองรับเงินที่จัดกลุ่มไม่ได้ — dashboard อธิบายเพิ่มให้ผู้ใช้เข้าใจ */
 export const FALLBACK = "อื่นๆ";
+
+export const CATEGORIES_KEY = ["categories"] as const;
+
+/** หมวดที่เปิดอยู่ทั้งหมด (หมวดกลาง + ของผู้ใช้) เรียงตามที่ backend จัดไว้ */
+export function useCategories() {
+  return useQuery({
+    queryKey: [...CATEGORIES_KEY, "active"],
+    queryFn: () => fetchCategories(false),
+    // รายชื่อหมวดแทบไม่เปลี่ยน — ไม่ต้องยิงใหม่ทุกครั้งที่สลับหน้า
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** จัดเป็นหมวดหลักพร้อมหมวดย่อยของแต่ละตัว — ใช้ทำ <optgroup> และหน้าจัดการหมวด */
+export function groupCategories(list: Category[]) {
+  const roots = list.filter((c) => !c.parent_id);
+  return roots.map((root) => ({
+    root,
+    children: list.filter((c) => c.parent_id === root.id),
+  }));
+}
+
+export const labelOf = (c: Pick<Category, "name" | "icon">) =>
+  c.icon ? `${c.icon} ${c.name}` : c.name;
