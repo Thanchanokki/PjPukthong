@@ -51,6 +51,7 @@ export const transactionCreateSchema = z.object({
     z.string().uuid({ message: "receipt_id ไม่ใช่ UUID ที่ถูกต้อง" }).nullish(),
   ),
   merchant_name: strField,
+  merchant_type: strField,
   branch: strField,
   merchant_tax_id: strField,
   doc_number: strField,

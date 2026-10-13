@@ -6,6 +6,7 @@ import type { z } from "zod";
 
 import type { CategoryDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
+import { MERCHANT_TYPES } from "../../shared/merchant-types.js";
 import { zodMessage } from "../../shared/zod.js";
 import { requireAuth } from "../auth/auth.security.js";
 import { categoryCreateSchema, categoryUpdateSchema } from "./categories.schema.js";
@@ -48,6 +49,11 @@ export default async function categoriesController(app: FastifyInstance) {
     const all = req.query.include_inactive === "1";
     return (all ? book.all : book.active).map(categoryOut);
   });
+
+  /** ประเภทร้าน (ชุดตายตัวของระบบ) — ใช้ในดรอปดาวน์ "ประเภทร้าน" ของฟอร์มใบเสร็จ */
+  app.get("/api/merchant-types", async () =>
+    MERCHANT_TYPES.map((t) => ({ id: t.id, name: t.name, icon: t.icon })),
+  );
 
   app.post("/api/categories", async (req, reply) => {
     const doc = await service.create(req.userId, parse(categoryCreateSchema, req.body));

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { receipts, transactions } from "../../db/client.js";
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
+import { matchMerchantType } from "../../shared/merchant-types.js";
 import { Decimal, dec, moneyOut, quantize, sum } from "../../shared/money.js";
 import { type CategoryBook, loadBook } from "../categories/categories.service.js";
 import type { TransactionCreate } from "./transactions.schema.js";
@@ -51,6 +52,8 @@ function toFields(payload: TransactionCreate, book: CategoryBook) {
     // ระบบรายรับถูกตัดออก — ทุกอย่างที่บันทึกผ่าน API นี้คือรายจ่าย
     direction: "expense",
     merchantName: payload.merchant_name,
+    // ค่าที่ไม่รู้จักกลายเป็น null (= นับเป็น "ร้านอื่นๆ" ตอนสรุป) ไม่ใช่ error
+    merchantType: matchMerchantType(payload.merchant_type),
     branch: payload.branch,
     merchantTaxId: payload.merchant_tax_id,
     docNumber: payload.doc_number,

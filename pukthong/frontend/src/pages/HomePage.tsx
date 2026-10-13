@@ -79,8 +79,9 @@ export default function HomePage() {
     queryFn: () => fetchMonthly(month, "purchased"),
   });
   const budget = useQuery({
-    queryKey: ["budget", month],
-    queryFn: () => fetchBudget(month),
+    // ใช้แกนเดียวกับค่าเริ่มต้นของหน้างบ (ตามประเภทร้าน) การ์ดนี้กับหน้างบจะได้ตรงกัน
+    queryKey: ["budget", month, "merchant"],
+    queryFn: () => fetchBudget(month, "merchant"),
   });
 
   const expense = Number(monthly.data?.expense_total ?? 0);

@@ -2,15 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, type FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { baht } from "../api";
+import { type Transaction, baht, fetchMonthly } from "../api";
 import {
+  type BudgetAxis,
   type BudgetLine,
+  type BudgetOption,
   copyBudget,
   fetchBudget,
   removeBudgetLimit,
   saveBudgetLimit,
 } from "../budget";
-import { useCategories } from "../categories";
+import { FALLBACK, labelOf } from "../categories";
+import { type BudgetItem, BudgetItemsDialog } from "../components/BudgetItemsDialog";
 
 /**
  * หน้างบประมาณ — ธีม "ม้วนใบเสร็จ" (paper/ink/stamp/ledger/kraft จาก tailwind.config)
@@ -74,15 +77,32 @@ const suggestLimit = (spent: number) =>
 export default function BudgetPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
+  /** แกนของงบ — ค่าเริ่มต้นคือตามประเภทร้าน (เก็บใน URL ให้ refresh แล้วอยู่แท็บเดิม) */
+  const axis: BudgetAxis = params.get("by") === "item" ? "item" : "merchant";
   const qc = useQueryClient();
-  const { data: categories = [] } = useCategories();
   /** หมวดที่กำลังแก้วงเงินอยู่ — เปิดได้ทีละหมวด */
   const [editing, setEditing] = useState<string | null>(null);
+  /** หมวดที่เปิดป๊อปอัพดูรายการสินค้าอยู่ */
+  const [detail, setDetail] = useState<BudgetLine | null>(null);
+  // รายการของเดือนนี้ — key เดียวกับหน้ารายงาน/หน้าหลัก จึงมักได้จาก cache ทันที
+  // โหลดเฉพาะตอนเปิดป๊อปอัพ ไม่ต้องดึงทั้งเดือนทุกครั้งที่เข้าหน้างบ
+  const monthly = useQuery({
+    queryKey: ["monthly", month, "purchased"],
+    queryFn: () => fetchMonthly(month, "purchased"),
+    enabled: detail !== null,
+  });
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ["budget", month],
-    queryFn: () => fetchBudget(month),
+    queryKey: ["budget", month, axis],
+    queryFn: () => fetchBudget(month, axis),
   });
+  // ใช้ตัดสินว่าจะโชว์ปุ่ม "ใช้งบเดือนก่อน" ไหม — ถ้าเดือนก่อนไม่มีงบ กดไปก็ได้แค่ error
+  const prevMonth = shiftMonth(month, -1);
+  const prev = useQuery({
+    queryKey: ["budget", prevMonth, axis],
+    queryFn: () => fetchBudget(prevMonth, axis),
+  });
+  const canCopy = (prev.data?.lines ?? []).some((l) => l.limit !== null);
 
   const done = () => {
     setEditing(null);
@@ -90,23 +110,31 @@ export default function BudgetPage() {
   };
 
   const save = useMutation({
-    mutationFn: (v: { category: string; limit: number }) =>
-      saveBudgetLimit(month, v.category, v.limit),
+    mutationFn: (v: { categoryId: string; limit: number }) =>
+      saveBudgetLimit(month, axis, v.categoryId, v.limit),
+    // error เก่าของปุ่มคัดลอกค้างอยู่จะดูเหมือนการตั้งงบล้มเหลวไปด้วย — ล้างทิ้งตอนเริ่มบันทึก
+    onMutate: () => copy.reset(),
     onSuccess: done,
   });
   const remove = useMutation({
-    mutationFn: (category: string) => removeBudgetLimit(month, category),
+    mutationFn: (categoryId: string) => removeBudgetLimit(month, axis, categoryId),
     onSuccess: done,
   });
   const copy = useMutation({
-    mutationFn: () => copyBudget(shiftMonth(month, -1), month),
+    mutationFn: () => copyBudget(axis, shiftMonth(month, -1), month),
     onSuccess: done,
   });
 
   const goTo = (next: string) => {
     setEditing(null);
-    setParams({ month: next });
+    setParams({ month: next, by: axis });
   };
+  const switchAxis = (next: BudgetAxis) => {
+    setEditing(null);
+    setParams({ month, by: next });
+  };
+  // นับเป็นรายการสินค้าทั้งสองแกน — ตรงกับ "รวม N รายการ" ในป๊อปอัพ
+  const unit = "รายการ";
 
   const busy = save.isPending || remove.isPending || copy.isPending;
   const mutationError = (save.error ?? remove.error ?? copy.error) as Error | null;
@@ -118,11 +146,9 @@ export default function BudgetPage() {
   const unbudgeted = lines
     .filter((l) => l.limit === null)
     .sort((a, b) => Number(b.spent) - Number(a.spent));
-  // งบตั้งได้เฉพาะหมวดหลัก — หมวดย่อยถูกรวมขึ้นไปที่หมวดหลักในยอดสรุปอยู่แล้ว
-  const unused = categories
-    .filter((c) => !c.parent_id)
-    .map((c) => c.name)
-    .filter((c) => !lines.some((l) => l.category === c));
+  // ดรอปดาวน์แสดงทุกตัวเลือกของแกนนั้น รวมที่อยู่ในรายการด้านบนแล้วด้วย (เลือกซ้ำ = แก้วงเงิน)
+  // แกนสินค้า backend ส่งมาเฉพาะหมวดหลัก — ยอดของหมวดย่อยรวมอยู่ในหมวดหลักแล้ว
+  const options = data?.options ?? [];
 
   const totalLimit = sum(budgeted, "limit");
   const totalSpent = sum(budgeted, "spent");
@@ -134,6 +160,22 @@ export default function BudgetPage() {
         <h1 className="flex-1 text-2xl font-semibold">งบประมาณ</h1>
         <MonthSwitcher month={month} onChange={goTo} />
       </header>
+
+      <AxisTabs value={axis} onChange={switchAxis} />
+
+      {detail && (
+        <BudgetItemsDialog
+          title={labelOf({ name: detail.category, icon: detail.icon })}
+          items={itemsOf(monthly.data?.transactions ?? [], axis, detail)}
+          spent={Number(detail.spent)}
+          loading={monthly.isPending}
+          onClose={() => setDetail(null)}
+          onEditLimit={() => {
+            setEditing(detail.category_id);
+            setDetail(null);
+          }}
+        />
+      )}
 
       {isPending && <p className="text-sm text-ink/50">กำลังโหลด…</p>}
       {isError && <ErrorBox message={(error as Error).message} />}
@@ -151,7 +193,7 @@ export default function BudgetPage() {
             <EmptyBudget
               month={month}
               busy={copy.isPending}
-              onCopy={() => copy.mutate()}
+              onCopy={canCopy ? () => copy.mutate() : null}
             />
           )}
 
@@ -163,19 +205,20 @@ export default function BudgetPage() {
               <ul className="divide-y divide-kraft overflow-hidden rounded-xl border border-kraft bg-white">
                 {budgeted.map((line) => (
                   <BudgetRow
-                    key={line.category}
+                    key={line.category_id}
                     line={line}
-                    open={editing === line.category}
+                    unit={unit}
+                    open={editing === line.category_id}
                     busy={busy}
                     onToggle={() =>
-                      setEditing(editing === line.category ? null : line.category)
+                      editing === line.category_id ? setEditing(null) : setDetail(line)
                     }
-                    onSave={(limit) => save.mutate({ category: line.category, limit })}
-                    onRemove={() => remove.mutate(line.category)}
+                    onSave={(limit) => save.mutate({ categoryId: line.category_id, limit })}
+                    onRemove={() => remove.mutate(line.category_id)}
                   />
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-ink/45">แตะที่หมวดเพื่อแก้วงเงิน</p>
+              <p className="mt-2 text-xs text-ink/45">แตะที่หมวดเพื่อดูรายการที่สแกนมาและแก้วงเงิน</p>
             </section>
           )}
 
@@ -187,24 +230,27 @@ export default function BudgetPage() {
               <ul className="divide-y divide-kraft overflow-hidden rounded-xl border border-dashed border-kraft">
                 {unbudgeted.map((line) => (
                   <UnbudgetedRow
-                    key={line.category}
+                    key={line.category_id}
                     line={line}
-                    open={editing === line.category}
+                    unit={unit}
+                    open={editing === line.category_id}
                     busy={busy}
-                    onOpen={() => setEditing(line.category)}
+                    onOpen={() => setEditing(line.category_id)}
                     onCancel={() => setEditing(null)}
-                    onSave={(limit) => save.mutate({ category: line.category, limit })}
+                    onSave={(limit) => save.mutate({ categoryId: line.category_id, limit })}
                   />
                 ))}
               </ul>
             </section>
           )}
 
-          {unused.length > 0 && (
+          {options.length > 0 && (
             <AddBudget
-              categories={unused}
+              label={axis === "merchant" ? "ตั้งงบตามประเภทร้าน" : "ตั้งงบตามหมวดสินค้า"}
+              categories={options}
+              lines={lines}
               busy={busy}
-              onSave={(category, limit) => save.mutate({ category, limit })}
+              onSave={(categoryId, limit) => save.mutate({ categoryId, limit })}
             />
           )}
         </>
@@ -217,7 +263,65 @@ const ratio = (l: BudgetLine) => Number(l.spent) / Math.max(Number(l.limit), 1);
 const sum = (ls: BudgetLine[], key: "limit" | "spent") =>
   ls.reduce((acc, l) => acc + Number(l[key] ?? 0), 0);
 
+/**
+ * สินค้าที่สแกนมาและถูกนับเข้างบบรรทัดนี้ — เฉพาะรายการสินค้า ไม่รวมส่วนต่างท้ายบิล
+ *
+ * - แกนร้าน: ทุกชิ้นในใบที่ประเภทร้านตรงกัน (ยังไม่ได้จัดประเภท = ร้านอื่นๆ เหมือน backend)
+ * - แกนสินค้า: ทุกชิ้นที่หมวดหลักตรงกัน (หมวดย่อยรวมขึ้นหมวดหลักแล้วใน category_root)
+ */
+function itemsOf(txs: Transaction[], axis: BudgetAxis, line: BudgetLine): BudgetItem[] {
+  const rows: BudgetItem[] = [];
+  for (const tx of txs) {
+    if (axis === "merchant" && (tx.merchant_type ?? "other_shop") !== line.category_id) continue;
+    for (const it of tx.items) {
+      // นับแบบเดียวกับ backend (ทุกชิ้นที่มียอด รวมของแถม 0.00) ให้จำนวนตรงกับแถวงบ
+      if (it.amount === null || it.amount === undefined) continue;
+      const amount = Number(it.amount);
+      if (axis === "item" && (it.category_root ?? FALLBACK) !== line.category) continue;
+      rows.push({
+        key: `${tx.id}-${it.id}`,
+        name: it.name ?? "(ไม่มีชื่อรายการ)",
+        date: tx.purchased_at,
+        merchant: tx.merchant_name,
+        amount,
+      });
+    }
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount);
+}
+
 // ---------------------------------------------------------------- ส่วนย่อย
+
+/** สลับงบ "ตามประเภทร้าน" กับ "ตามหมวดสินค้า" — งบสองแบบแยกกันคนละชุด */
+function AxisTabs({ value, onChange }: { value: BudgetAxis; onChange: (v: BudgetAxis) => void }) {
+  const tabs: { id: BudgetAxis; label: string; hint: string }[] = [
+    { id: "merchant", label: "ตามประเภทร้าน", hint: "" },
+    { id: "item", label: "ตามหมวดสินค้า", hint: "" },
+  ];
+  return (
+    <div>
+      <div role="tablist" className="grid grid-cols-2 gap-1 rounded-xl bg-ink/5 p-1">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={value === t.id}
+            onClick={() => onChange(t.id)}
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              value === t.id ? "bg-white text-ink shadow-sm" : "text-ink/55 hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-center text-xs text-ink/45">
+        {tabs.find((t) => t.id === value)!.hint}
+      </p>
+    </div>
+  );
+}
 
 function MonthSwitcher({
   month,
@@ -340,28 +444,33 @@ function EmptyBudget({
 }: {
   month: string;
   busy: boolean;
-  onCopy: () => void;
+  /** null = เดือนก่อนไม่มีงบให้คัดลอก จึงไม่แสดงปุ่ม */
+  onCopy: (() => void) | null;
 }) {
   return (
     <section className="rounded-xl bg-paper px-5 py-6">
       <h2 className="font-semibold">ยังไม่ได้ตั้งงบเดือน{monthLabel(month)}</h2>
       <p className="mt-1 text-sm text-ink/65">
-        กำหนดวงเงินของแต่ละหมวด แล้วระบบจะเทียบกับรายจ่ายจากใบเสร็จให้ทุกครั้งที่บันทึก
+        เลือกหมวดใน "ตั้งงบหมวดอื่น" ด้านล่าง หรือกด "ตั้งงบ" ที่หมวดที่มีรายจ่ายแล้ว
+        จากนั้นระบบจะเทียบกับรายจ่ายจากใบเสร็จให้ทุกครั้งที่บันทึก
       </p>
-      <button
-        type="button"
-        onClick={onCopy}
-        disabled={busy}
-        className="mt-4 rounded-lg bg-stamp px-4 py-2 text-sm font-medium text-white hover:bg-stamp/90 disabled:opacity-50"
-      >
-        {busy ? "กำลังคัดลอก…" : `ใช้งบเดียวกับเดือน${monthLabel(shiftMonth(month, -1))}`}
-      </button>
+      {onCopy && (
+        <button
+          type="button"
+          onClick={onCopy}
+          disabled={busy}
+          className="mt-4 rounded-lg bg-stamp px-4 py-2 text-sm font-medium text-white hover:bg-stamp/90 disabled:opacity-50"
+        >
+          {busy ? "กำลังคัดลอก…" : `ใช้งบเดียวกับเดือน${monthLabel(shiftMonth(month, -1))}`}
+        </button>
+      )}
     </section>
   );
 }
 
 function BudgetRow({
   line,
+  unit,
   open,
   busy,
   onToggle,
@@ -369,6 +478,8 @@ function BudgetRow({
   onRemove,
 }: {
   line: BudgetLine;
+  /** หน่วยที่ต่อท้ายจำนวน ("รายการ") */
+  unit: string;
   open: boolean;
   busy: boolean;
   onToggle: () => void;
@@ -386,6 +497,7 @@ function BudgetRow({
       <button
         type="button"
         onClick={onToggle}
+        aria-haspopup="dialog"
         aria-expanded={open}
         className="block w-full px-4 py-3.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-stamp"
       >
@@ -403,7 +515,7 @@ function BudgetRow({
           <span className={TONE[tone].text}>
             {left >= 0 ? `เหลือ ฿${baht(left)}` : `เกินงบ ฿${baht(-left)}`}
           </span>
-          <span className="text-ink/45">{line.count} ชิ้น</span>
+          <span className="text-ink/45">{line.count} {unit}</span>
         </div>
       </button>
 
@@ -424,6 +536,7 @@ function BudgetRow({
 
 function UnbudgetedRow({
   line,
+  unit,
   open,
   busy,
   onOpen,
@@ -431,6 +544,8 @@ function UnbudgetedRow({
   onSave,
 }: {
   line: BudgetLine;
+  /** หน่วยที่ต่อท้ายจำนวน ("รายการ") */
+  unit: string;
   open: boolean;
   busy: boolean;
   onOpen: () => void;
@@ -444,7 +559,7 @@ function UnbudgetedRow({
           <p className="truncate text-sm font-medium">{line.category}</p>
           <p className="text-xs text-ink/50">
             ใช้ไป <span className="font-mono tabular-nums">฿{baht(line.spent)}</span> จาก{" "}
-            {line.count} ชิ้น
+            {line.count} {unit}
           </p>
         </div>
         {!open && (
@@ -470,20 +585,33 @@ function UnbudgetedRow({
 }
 
 function AddBudget({
+  label,
   categories,
+  lines,
   busy,
   onSave,
 }: {
-  categories: string[];
+  label: string;
+  categories: BudgetOption[];
+  /** บรรทัดงบของเดือนนี้ — ใช้บอกวงเงิน/ยอดเดิมในดรอปดาวน์ และเติมวงเงินเดิมตอนเลือก */
+  lines: BudgetLine[];
   busy: boolean;
-  onSave: (category: string, limit: number) => void;
+  /** ส่ง id ของหมวด ไม่ใช่ชื่อ — ชื่อหมวดเปลี่ยนได้ แต่ id ไม่เปลี่ยน */
+  onSave: (categoryId: string, limit: number) => void;
 }) {
   const [category, setCategory] = useState("");
+  const lineOf = (id: string) => lines.find((l) => l.category_id === id);
+  const hint = (id: string) => {
+    const l = lineOf(id);
+    if (l?.limit) return ` · ตั้งไว้ ฿${baht(l.limit)}`;
+    if (l && Number(l.spent) > 0) return ` · ใช้ไป ฿${baht(l.spent)}`;
+    return "";
+  };
 
   return (
     <section>
       <label htmlFor="add-budget-category" className="mb-2 block text-sm font-medium text-ink/60">
-        ตั้งงบหมวดอื่น
+        {label}
       </label>
       <select
         id="add-budget-category"
@@ -493,15 +621,17 @@ function AddBudget({
       >
         <option value="">เลือกหมวด</option>
         {categories.map((c) => (
-          <option key={c} value={c}>
-            {c}
+          <option key={c.id} value={c.id}>
+            {labelOf(c)}
+            {hint(c.id)}
           </option>
         ))}
       </select>
       {category && (
         <LimitEditor
           key={category}
-          initial=""
+          // หมวดที่ตั้งงบไว้แล้วเริ่มจากวงเงินเดิม ให้เห็นว่ากำลังแก้ ไม่ใช่ตั้งใหม่
+          initial={lineOf(category)?.limit ? String(Number(lineOf(category)!.limit)) : ""}
           busy={busy}
           onSave={(limit) => {
             onSave(category, limit);
@@ -545,8 +675,11 @@ function LimitEditor({
         <input
           type="number"
           inputMode="decimal"
-          min={1}
-          step={100}
+          // step="any" — ถ้าใส่ step={100} คู่กับ min={1} เบราว์เซอร์จะนับค่าที่ถูกต้องเป็น
+          // 1, 101, 201, … แล้วปฏิเสธ 1000/5000 ("ค่าใกล้เคียงคือ 901 และ 1001")
+          // การเช็คว่าต้องมากกว่า 0 ทำใน valid ด้านบนอยู่แล้ว
+          min={0}
+          step="any"
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}

@@ -13,6 +13,8 @@ import type { LineItem, ReceiptDraft } from "../api";
  */
 export type Form = {
   merchant_name: string;
+  /** id ประเภทร้าน ("" = ยังไม่ได้เลือก) */
+  merchant_type: string;
   branch: string;
   merchant_tax_id: string;
   doc_number: string;
@@ -31,6 +33,7 @@ export type Form = {
 
 export const EMPTY: Form = {
   merchant_name: "",
+  merchant_type: "",
   branch: "",
   merchant_tax_id: "",
   doc_number: "",
@@ -54,6 +57,7 @@ export function draftToForm(d: ReceiptDraft): Form {
   return {
     ...EMPTY,
     merchant_name: s(d.merchant_name),
+    merchant_type: s(d.merchant_type),
     branch: s(d.branch),
     merchant_tax_id: s(d.merchant_tax_id),
     doc_number: s(d.doc_number),
@@ -102,6 +106,7 @@ export function buildPayload(
   return {
     receipt_id: receiptId,
     merchant_name: num(form.merchant_name),
+    merchant_type: num(form.merchant_type),
     branch: num(form.branch),
     merchant_tax_id: num(form.merchant_tax_id),
     doc_number: num(form.doc_number),

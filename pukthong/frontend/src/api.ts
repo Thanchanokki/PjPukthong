@@ -29,7 +29,7 @@ export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
 /** ไม่มี token = ไม่ส่ง header เปล่าๆ ไป ปล่อยให้ backend ตอบ 401 ตามปกติ */
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
 }
@@ -73,6 +73,13 @@ export type Category = {
   is_system: boolean;
 };
 
+/** ประเภทร้าน — ชุดตายตัวของระบบ ใช้แยกใบเสร็จทั้งใบตามร้าน (คนละแกนกับหมวดสินค้า) */
+export type MerchantType = { id: string; name: string; icon: string };
+
+export async function fetchMerchantTypes(): Promise<MerchantType[]> {
+  return handle(await fetch(`${API_BASE}/api/merchant-types`, { headers: authHeaders() }));
+}
+
 export type CategoryInput = {
   name?: string;
   parent_id?: string | null;
@@ -84,6 +91,8 @@ export type CategoryInput = {
 export type ReceiptDraft = {
   document_type: string | null;
   merchant_name: string | null;
+  /** id ประเภทร้านที่ AI เดา — null = ตอบนอกรายการ */
+  merchant_type: string | null;
   branch: string | null;
   merchant_tax_id: string | null;
   doc_number: string | null;
@@ -175,6 +184,9 @@ export type Transaction = {
   vat_rate: string | null;
   vat_amount: string | null;
   total: string;
+  /** id ประเภทร้าน — null = ยังไม่ได้จัด (นับเป็น "ร้านอื่นๆ") */
+  merchant_type: string | null;
+  merchant_type_name: string;
   category_id: string | null;
   /** ชื่อหมวด — backend เปิดหาจาก category_id ให้ */
   category: string | null;
@@ -212,7 +224,7 @@ export type Monthly = {
   transactions: Transaction[];
 };
 
-async function handle<T>(res: Response): Promise<T> {
+export async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // token หมดอายุหรือถูกเพิกถอน — ทิ้งทันที ไม่งั้นแอปจะพยายามใช้ต่อจนกว่าจะปิดแท็บ
     if (res.status === 401) {
