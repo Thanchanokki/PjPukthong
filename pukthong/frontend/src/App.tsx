@@ -6,6 +6,7 @@ import { Logo } from "./components/Logo";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
 import DashboardPage from "./pages/DashboardPage";
+import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import ManualPage from "./pages/ManualPage";
 import MonthlyPage from "./pages/MonthlyPage";
@@ -58,7 +59,8 @@ function Shell() {
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6">
         <Routes>
-          <Route path="/" element={<CapturePage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/add" element={<CapturePage />} />
           <Route path="/review/:receiptId" element={<ReviewPage />} />
           <Route path="/manual" element={<ManualPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

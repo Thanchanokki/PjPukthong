@@ -161,3 +161,102 @@ export function ArrowLeftIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/**
+ * ไอคอนเพิ่มสำหรับหน้าแรกใหม่ (HomePage) — สไตล์เส้นเดียวกับ HomeIcon/ListIcon/
+ * PieChartIcon/BudgetIcon ด้านบน (viewBox 24x24, strokeWidth 1.6)
+ *
+ * ก็อปวางต่อท้ายไฟล์ components/icons.tsx เดิมได้เลย (import type { SVGProps }
+ * มีอยู่แล้วบนสุดของไฟล์นั้น ไม่ต้องเพิ่มซ้ำ)
+ */
+
+/** ไอคอนคนในวงกลม — ใช้เป็น avatar เริ่มต้นตอนยังไม่มีรูปโปรไฟล์ */
+export function PersonIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <circle cx="12" cy="8.5" r="3.25" />
+      <path d="M5.5 20c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" />
+    </svg>
+  );
+}
+
+/** ปุ่มตั้งค่าข้างชื่อผู้ใช้ — ตอนนี้ยังไม่มีหน้าตั้งค่าโปรไฟล์จริง ใส่ไว้เป็น placeholder ก่อน */
+export function GearIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.6-1.3-2-3.4-1.9.6a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.4a7.7 7.7 0 0 0-2.6 1.5l-1.9-.6-2 3.4 1.6 1.3a7.6 7.6 0 0 0 0 3L2.9 14.8l2 3.4 1.9-.6a7.7 7.7 0 0 0 2.6 1.5l.5 2.4h4l.5-2.4a7.7 7.7 0 0 0 2.6-1.5l1.9.6 2-3.4-1.6-1.3Z" />
+    </svg>
+  );
+}
+
+/** ใช้กับตัวเลือกเดือนที่หน้าแรก */
+export function CalendarIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <rect x="4" y="5.5" width="16" height="15" rx="2" />
+      <path d="M8 3.5v4M16 3.5v4M4 10h16" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+/** ปุ่มลอย (FAB) เพิ่มรายการที่หน้าแรก */
+export function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
