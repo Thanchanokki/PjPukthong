@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { httpError, requireUuid } from "../../shared/errors.js";
 import { zodMessage } from "../../shared/zod.js";
 import { requireAuth } from "../auth/auth.security.js";
+import { loadBook } from "../categories/categories.service.js";
 import { transactionCreateSchema, type TransactionCreate } from "./transactions.schema.js";
 import { transactionOut } from "./transactions.serializer.js";
 import * as service from "./transactions.service.js";
@@ -22,7 +23,7 @@ export default async function transactionsController(app: FastifyInstance) {
 
   app.post("/api/transactions", async (req, reply) => {
     const doc = await service.create(req.userId, parseBody(req.body));
-    return reply.code(201).send(transactionOut(doc));
+    return reply.code(201).send(transactionOut(doc, await loadBook(req.userId)));
   });
 
   /**
@@ -40,13 +41,17 @@ export default async function transactionsController(app: FastifyInstance) {
 
   app.get<{ Params: { txId: string } }>("/api/transactions/:txId", async (req) => {
     const id = requireUuid(req.params.txId, "tx_id");
-    return transactionOut(await service.findOwned(req.userId, id));
+    const [doc, book] = await Promise.all([
+      service.findOwned(req.userId, id),
+      loadBook(req.userId),
+    ]);
+    return transactionOut(doc, book);
   });
 
   app.put<{ Params: { txId: string } }>("/api/transactions/:txId", async (req) => {
     const id = requireUuid(req.params.txId, "tx_id");
     const doc = await service.update(req.userId, id, parseBody(req.body));
-    return transactionOut(doc);
+    return transactionOut(doc, await loadBook(req.userId));
   });
 
   app.delete<{ Params: { txId: string } }>(
@@ -71,11 +76,11 @@ export default async function transactionsController(app: FastifyInstance) {
      * สแกนเดือนนี้จะไม่โผล่ในมุมมอง "สแกนเดือนนี้" เลย
      */
     const axis = req.query.by === "uploaded" ? "uploaded" : "purchased";
-    const { rows, ...summary } = await service.monthlySummary(req.userId, month, axis);
+    const { rows, book, ...summary } = await service.monthlySummary(req.userId, month, axis);
     return {
       ...summary,
       // รายการย่อยฝังมากับ document อยู่แล้ว จึงไม่มีปัญหา N+1 เหมือนตอนใช้ตารางแยก
-      transactions: rows.map(transactionOut),
+      transactions: rows.map((r) => transactionOut(r, book)),
     };
     },
   );

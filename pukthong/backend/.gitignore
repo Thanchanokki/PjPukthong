@@ -12,3 +12,6 @@ uploads/
 
 .DS_Store
 *.code-workspace
+
+# รูปใบเสร็จจริงสำหรับทดลอง OCR — มีข้อมูลส่วนตัว ห้าม commit
+test-receipts/

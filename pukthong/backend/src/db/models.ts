@@ -68,12 +68,39 @@ export interface TransactionItemDoc {
   /** ตัวอักษรกำกับราคาบนใบเสร็จ (เช่น N) — prompt สั่งห้ามตัดทิ้ง */
   flag: string | null;
   /**
-   * หมวดค่าใช้จ่ายของของชิ้นนี้ (ดู shared/categories.ts) — null = ยังไม่ได้จัดหมวด
+   * หมวดของของชิ้นนี้ = CategoryDoc._id — null = ยังไม่ได้จัดหมวด
    *
    * เก็บที่ระดับรายการ ไม่ใช่ระดับใบเสร็จ เพราะใบเดียวมักมีของหลายหมวดปนกัน
    * (7-11 ใบเดียวมีทั้งนมและแชมพู) — dashboard จึงสรุปว่าเงินไปกับอะไรได้จริง
+   *
+   * เก็บ id ไม่ใช่ชื่อ: เปลี่ยนชื่อหมวดแล้วรายการเก่าตามไปด้วย ไม่หลุดออกจากหมวด
    */
-  category: string | null;
+  categoryId: string | null;
+}
+
+/**
+ * หมวดค่าใช้จ่าย — หมวดกลางของระบบ (userId = null) + หมวดที่ผู้ใช้สร้างเอง
+ *
+ * - หมวดกลางใช้ _id เป็น slug คงที่ ("food") ซึ่ง seed จาก shared/categories.ts ทุกครั้งที่บูต
+ * - หมวดของผู้ใช้ใช้ _id เป็น UUID เหมือน document อื่น
+ * - ห้ามลบจริง ใช้ isActive = false แทน — รายการเก่าที่ชี้มายังต้องแสดงชื่อหมวดได้
+ */
+export interface CategoryDoc {
+  _id: string;
+  /** null = หมวดกลางที่ทุกคนเห็น — มีค่า = เห็นได้เฉพาะเจ้าของ */
+  userId: string | null;
+  name: string;
+  /** หมวดย่อยชี้ไปหมวดหลัก (ลึกได้ชั้นเดียว) — dashboard รวมยอดขึ้นไปที่หมวดหลัก */
+  parentId: string | null;
+  icon: string | null;
+  /** '#RRGGBB' */
+  color: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  /** ชื่ออื่นที่ AI หรือข้อมูลเก่าอาจใช้ — ใช้จับคู่ชื่อเป็น id ตอนรับผลจาก AI */
+  aliases: string[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface TransactionDoc {
@@ -119,7 +146,8 @@ export interface TransactionDoc {
   vatRate: string | null;
   vatAmount: string | null;
   total: string;
-  category: string | null;
+  /** หมวดของทั้งใบ = CategoryDoc._id — ใช้เฉพาะใบที่ไม่มีรายการย่อย */
+  categoryId: string | null;
   paymentMethod: string | null;
   paymentChannel: string | null;
   note: string | null;

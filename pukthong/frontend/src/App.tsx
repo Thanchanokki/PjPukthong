@@ -5,6 +5,7 @@ import { BottomNav } from "./components/BottomNav";
 import { Logo } from "./components/Logo";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
+import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
@@ -47,9 +48,17 @@ function Shell() {
         <div className="mx-auto flex max-w-6xl items-center px-4 py-3">
           <Link to="/" aria-label="Pukthong หน้าหลัก">
            <Logo variant="full" height={38} />
-          </Link>          <button
-            onClick={logout}
+          </Link>
+          {/* หน้าจัดการหมวดไม่ได้ใช้บ่อยพอจะมีที่ใน bottom nav — วางไว้ข้างปุ่มออกจากระบบ */}
+          <Link
+            to="/categories"
             className="ml-auto rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
+          >
+            หมวดหมู่
+          </Link>
+          <button
+            onClick={logout}
+            className=" rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
           >
             ออกจากระบบ
           </button>
@@ -66,6 +75,7 @@ function Shell() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monthly" element={<MonthlyPage />} />
            <Route path="/budget" element={<BudgetPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

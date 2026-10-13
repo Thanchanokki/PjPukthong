@@ -7,7 +7,6 @@
  */
 import { z } from "zod";
 
-import { normalize as normalizeCategory } from "../../shared/categories.js";
 import {
   currencyField,
   decField,
@@ -18,13 +17,6 @@ import {
   toTimeString,
 } from "../../shared/zod.js";
 
-/**
- * หมวดที่ AI เดามา — บีบให้เป็นหนึ่งในชุดที่ระบบรู้จัก ไม่งั้นคืน null
- *
- * ทำตรงนี้แทนที่จะเชื่อ prompt อย่างเดียว เพราะโมเดลตอบนอกรายการได้เสมอ
- * และหมวดที่หลุดรายการจะทำให้ dashboard แตกเป็นหมวดขยะ
- */
-const categoryField = z.preprocess(normalizeCategory, z.string().nullable());
 
 const lineItemSchema = z.object({
   qty: decField,
@@ -32,13 +24,19 @@ const lineItemSchema = z.object({
   unit_price: decField,
   amount: decField,
   flag: strField,
-  category_guess: categoryField,
+  /**
+   * ชื่อหมวดที่ AI เดามา — ตรงนี้ยังเป็นข้อความดิบ receipts.service จะแปลงเป็น
+   * id ของหมวดที่ผู้ใช้คนนั้นเห็น (ทำใน schema ไม่ได้เพราะหมวดต่างกันไปแต่ละคน)
+   * และกลายเป็น null ถ้าโมเดลตอบนอกรายการ — กันหมวดขยะหลุดเข้า dashboard
+   */
+  category_guess: strField,
 });
 
 export type LineItem = z.infer<typeof lineItemSchema>;
 
 const draftSchema = z.object({
   document_type: strField,
+  handwritten: z.preprocess((v) => v === true, z.boolean()),
   merchant_name: strField,
   branch: strField,
   merchant_tax_id: strField,

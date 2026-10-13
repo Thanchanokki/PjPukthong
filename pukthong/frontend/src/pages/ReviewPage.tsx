@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -15,6 +15,7 @@ import {
   TransactionFields,
 } from "../components/FormFields";
 import { ScanConfidenceCard } from "../components/ScanConfidenceCard";
+import { UnsupportedDialog } from "../components/UnsupportedDialog";
 import {
   EMPTY,
   type Form,
@@ -33,11 +34,15 @@ export default function ReviewPage() {
   const [result, setResult] = useState<ExtractResult | null>(null);
   const [pane, setPane] = useState<"image" | "form">("form");
   const autoRan = useRef(false);
+  /** ปิดป๊อปอัพแล้วไม่เด้งซ้ำจนกว่าจะกดให้อ่านใหม่ */
+  const [dismissed, setDismissed] = useState(false);
+  const closeDialog = useCallback(() => setDismissed(true), []);
 
   const extract = useMutation({
     mutationFn: () => extractReceipt(receiptId),
     onSuccess: (res) => {
       setResult(res);
+      setDismissed(false);
       setForm(draftToForm(res.draft));
       setItems(res.draft.line_items);
     },
@@ -108,6 +113,13 @@ export default function ReviewPage() {
           <p className="mt-1 text-xs">กรอกข้อมูลเองด้านล่างได้ตามปกติ</p>
         </div>
       )}
+      {/* ปิดป๊อปอัพไปแล้วยังต้องเห็นว่าใบนี้ไม่รองรับ — ไม่งั้นลืมแล้วบันทึกตัวเลขที่เชื่อไม่ได้ */}
+      {result?.unsupported && dismissed && (
+        <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">{result.unsupported.title}</p>
+          <p className="mt-0.5 text-xs">{result.unsupported.message}</p>
+        </div>
+      )}
       {result?.scan_confidence && (
         <ScanConfidenceCard conf={result.scan_confidence} />
       )}
@@ -159,6 +171,14 @@ export default function ReviewPage() {
 
   return (
     <div>
+      {result?.unsupported && !dismissed && (
+        <UnsupportedDialog
+          info={result.unsupported}
+          onRescan={() => navigate("/add")}
+          onContinue={closeDialog}
+        />
+      )}
+
       {/* มือถือ: สลับแท็บ  เดสก์ท็อป: สองฝั่ง */}
       <div className="mb-3 flex gap-2 lg:hidden">
         <button

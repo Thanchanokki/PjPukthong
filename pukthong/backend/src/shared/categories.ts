@@ -1,64 +1,77 @@
 /**
- * หมวดค่าใช้จ่าย — รายชื่อตายตัวชุดเดียวที่ทั้งระบบใช้ร่วมกัน
+ * หมวดกลางของระบบ — seed ลง collection `categories` ทุกครั้งที่บูต (ดู categories.service)
  *
- * ทำไมต้องตายตัว: dashboard สรุปเงินด้วยการจัดกลุ่มตามชื่อหมวดตรงๆ ถ้าปล่อยให้ AI
- * ตั้งชื่อเอง ใบหนึ่งจะได้ "เครื่องดื่ม" อีกใบได้ "น้ำและเครื่องดื่ม" อีกใบได้ "beverage"
- * แล้วกราฟจะแตกเป็นสิบหมวดที่หมายความว่าอย่างเดียวกัน — สรุปข้ามเดือนไม่ได้เลย
+ * ทำไม _id เป็น slug คงที่ ไม่ใช่ UUID: รายการทุกชิ้นเก็บ categoryId ไว้ ถ้า id เปลี่ยน
+ * ทุกครั้งที่ seed ข้อมูลเก่าจะหลุดหมวดหมด — แก้ชื่อหรือไอคอนตรงนี้ได้ แต่ห้ามแก้ id
  *
- * ⚠️ แก้รายการนี้เมื่อไหร่ ต้องแก้ที่ frontend/src/categories.ts ให้ตรงกันด้วย
- * (ประกาศสองที่เพราะ frontend กับ backend ไม่ได้ใช้ shared package ร่วมกัน)
- * ข้อมูลเก่าที่เก็บชื่อหมวดที่ถูกลบไว้จะตกไปอยู่ช่อง "อื่นๆ" ของ dashboard เอง
+ * aliases คือชื่อที่เคยใช้หรือที่ AI ชอบตอบ — ใช้แปลงชื่อเป็น id ทั้งตอนรับผลจาก AI
+ * และตอนย้ายข้อมูลเก่าที่เก็บเป็นชื่อหมวด (ก่อนมี collection นี้)
  */
 
-/** หมวดสำหรับ "ของที่ซื้อ" แต่ละชิ้น — เรียงตามที่อยากให้เห็นในดรอปดาวน์ */
-export const CATEGORIES = [
-  "อาหาร",
-  "เครื่องดื่ม",
-  "ของใช้ในบ้าน",
-  "ของใช้ส่วนตัว",
-  "สุขภาพและยา",
-  "เดินทาง",
-  "ช้อปปิ้ง",
-  "บิลและบริการ",
-  "การศึกษา",
-  "สัตว์เลี้ยง",
-  "บันเทิง",
-  "อื่นๆ",
-] as const;
-
-export type Category = (typeof CATEGORIES)[number];
-
-/**
- * หมวดปลายทางของเงินที่จัดกลุ่มไม่ได้
- *
- * ต้องเป็นสมาชิกของ CATEGORIES ด้วย ไม่งั้น dashboard จะมีแท่งที่เลือกในฟอร์มไม่ได้
- */
-export const FALLBACK: Category = "อื่นๆ";
-
-const KNOWN = new Set<string>(CATEGORIES);
-
-/**
- * แปลงค่าที่ AI หรือผู้ใช้ส่งมาให้เป็นหมวดที่รู้จัก — คืน null ถ้าจับคู่ไม่ได้
- *
- * คืน null ไม่ใช่ FALLBACK โดยตั้งใจ: "ยังไม่ได้จัดหมวด" กับ "จัดแล้วได้อื่นๆ"
- * เป็นคนละเรื่อง — อย่างแรกควรให้ผู้ใช้เห็นว่าต้องเลือกเอง อย่างหลังคือคำตอบสุดท้ายแล้ว
- * ส่วนการยุบ null ไปรวมกับ "อื่นๆ" เป็นหน้าที่ของ dashboard ตอนสรุป ไม่ใช่ตอนเก็บ
- */
-export function normalize(value: unknown): Category | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (KNOWN.has(trimmed)) return trimmed as Category;
-
-  // AI ชอบตอบชื่อใกล้เคียงแม้ prompt จะสั่งให้เลือกจากรายการ เช่น "อาหารและเครื่องดื่ม"
-  // จับแบบ "ชื่อหมวดไหนเป็นส่วนหนึ่งของคำตอบ" ก่อน แล้วเลือกตัวที่ยาวสุดเพื่อไม่ให้
-  // "ของใช้ในบ้าน" ถูกชิงไปโดยหมวดที่สั้นกว่าซึ่งบังเอิญเป็นสตริงย่อย
-  const hits = CATEGORIES.filter(
-    (c) => trimmed.includes(c) || c.includes(trimmed),
-  ).sort((a, b) => b.length - a.length);
-
-  return hits[0] ?? null;
+export interface SystemCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  aliases: string[];
 }
 
-/** รายชื่อหมวดในรูปแบบที่แปะลง prompt ได้เลย */
-export const promptList = CATEGORIES.join(" | ");
+export const SYSTEM_CATEGORIES: SystemCategory[] = [
+  { id: "food", name: "อาหาร", icon: "🍚", color: "#F59E0B", aliases: ["อาหารและเครื่องดื่ม", "ขนม"] },
+  { id: "drinks", name: "เครื่องดื่ม", icon: "☕", color: "#A16207", aliases: ["กาแฟ", "น้ำดื่ม"] },
+  { id: "household", name: "ของใช้ในบ้าน", icon: "🧽", color: "#0EA5E9", aliases: [] },
+  { id: "personal", name: "ความงามและของใช้ส่วนตัว", icon: "🧴", color: "#EC4899", aliases: ["ของใช้ส่วนตัว", "ความงาม", "เครื่องสำอาง"] },
+  { id: "health", name: "สุขภาพและยา", icon: "💊", color: "#10B981", aliases: ["สุขภาพ", "ยา"] },
+  { id: "transport", name: "เดินทาง", icon: "🚗", color: "#6366F1", aliases: ["การเดินทาง", "น้ำมัน"] },
+  { id: "apparel", name: "เสื้อผ้าและเครื่องประดับ", icon: "👕", color: "#8B5CF6", aliases: ["ช้อปปิ้ง", "เสื้อผ้า", "เครื่องประดับ"] },
+  { id: "electronics", name: "เครื่องใช้ไฟฟ้าและไอที", icon: "💻", color: "#64748B", aliases: ["ไอที", "อุปกรณ์อิเล็กทรอนิกส์"] },
+  { id: "housing", name: "ที่พักและสาธารณูปโภค", icon: "🏠", color: "#EF4444", aliases: ["บิลและบริการ", "ค่าเช่า", "ค่าน้ำ", "ค่าไฟ"] },
+  { id: "education", name: "การศึกษา", icon: "📚", color: "#14B8A6", aliases: ["เครื่องเขียน", "หนังสือ"] },
+  { id: "entertainment", name: "บันเทิงและงานอดิเรก", icon: "🎮", color: "#F97316", aliases: ["บันเทิง", "ของเล่น", "ท่องเที่ยว"] },
+  { id: "pets", name: "สัตว์เลี้ยง", icon: "🐾", color: "#84CC16", aliases: [] },
+  { id: "other", name: "อื่นๆ", icon: "📦", color: "#94A3B8", aliases: ["อื่น ๆ", "อื่น"] },
+];
+
+/**
+ * หมวดปลายทางของเงินที่จัดกลุ่มไม่ได้ (VAT ท้ายบิล ส่วนลด ของที่ยังไม่เลือกหมวด)
+ *
+ * ต้องเป็นหมวดกลางเสมอ ผู้ใช้ทุกคนจึงเห็นหมวดนี้ใน dashboard และเลือกในฟอร์มได้
+ */
+export const FALLBACK_ID = "other";
+
+/** ข้อมูลขั้นต่ำที่ใช้จับคู่ชื่อ — ทั้ง CategoryDoc และ SystemCategory มีครบ */
+export interface Matchable {
+  id: string;
+  name: string;
+  aliases: string[];
+}
+
+const clean = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+
+/**
+ * แปลงชื่อหรือ id ที่ AI/ผู้ใช้/ข้อมูลเก่าส่งมา ให้เป็น id ของหมวดที่ผู้ใช้คนนั้นเห็น
+ * คืน null ถ้าจับคู่ไม่ได้
+ *
+ * คืน null ไม่ใช่ FALLBACK_ID โดยตั้งใจ: "ยังไม่ได้จัดหมวด" กับ "จัดแล้วได้อื่นๆ"
+ * เป็นคนละเรื่อง — อย่างแรกควรให้ผู้ใช้เห็นว่าต้องเลือกเอง อย่างหลังคือคำตอบสุดท้ายแล้ว
+ */
+export function matchCategory(value: unknown, pool: readonly Matchable[]): string | null {
+  if (typeof value !== "string") return null;
+  const v = clean(value);
+  if (!v) return null;
+
+  for (const c of pool) {
+    if (c.id === value.trim() || clean(c.name) === v) return c.id;
+  }
+  for (const c of pool) {
+    if (c.aliases.some((a) => clean(a) === v)) return c.id;
+  }
+
+  // AI ชอบตอบชื่อใกล้เคียงแม้ prompt จะสั่งให้เลือกจากรายการ เช่น "อาหารญี่ปุ่น"
+  // เลือกตัวที่ชื่อยาวสุดเพื่อไม่ให้หมวดสั้นที่บังเอิญเป็นสตริงย่อยชิงไป
+  const hits = pool
+    .flatMap((c) => [c.name, ...c.aliases].map((n) => ({ id: c.id, n: clean(n) })))
+    .filter(({ n }) => n.length >= 2 && (v.includes(n) || n.includes(v)))
+    .sort((a, b) => b.n.length - a.n.length);
+  return hits[0]?.id ?? null;
+}

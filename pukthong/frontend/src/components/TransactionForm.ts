@@ -86,7 +86,7 @@ export const emptyItem = (): LineItem => ({
   unit_price: null,
   amount: null,
   flag: null,
-  category: null,
+  category_id: null,
 });
 
 /** ต้องมียอดรวมและวันที่ก่อนจึงจะบันทึกได้ (ตรงกับที่ backend บังคับ) */
@@ -126,8 +126,8 @@ export function buildPayload(
         unit_price: it.unit_price,
         amount: it.amount,
         flag: it.flag,
-        // AI เดาหมวดมาให้ตอนสแกน (category_guess) ผู้ใช้แก้ได้ที่ category
-        category: it.category ?? it.category_guess ?? null,
+        // AI เดาหมวดมาให้ตอนสแกน (category_guess) ผู้ใช้แก้ได้ที่ category_id
+        category_id: it.category_id ?? it.category_guess ?? null,
       })),
   };
 }

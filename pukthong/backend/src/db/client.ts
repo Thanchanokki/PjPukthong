@@ -9,7 +9,7 @@
 import { MongoClient } from "mongodb";
 
 import { settings } from "../config/index.js";
-import type { ReceiptDoc, TransactionDoc, UserDoc } from "./models.js";
+import type { CategoryDoc, ReceiptDoc, TransactionDoc, UserDoc } from "./models.js";
 
 export const client = new MongoClient(settings.mongoUri, {
   serverSelectionTimeoutMS: 5000,
@@ -20,6 +20,7 @@ export const database = client.db(settings.mongoDbName);
 export const users = database.collection<UserDoc>("users");
 export const receipts = database.collection<ReceiptDoc>("receipts");
 export const transactions = database.collection<TransactionDoc>("transactions");
+export const categories = database.collection<CategoryDoc>("categories");
 
 export async function connect(): Promise<void> {
   await client.connect();
