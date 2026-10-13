@@ -40,7 +40,7 @@ export default function LoginPage() {
       <AuthBrand
         tagline={
           <>
-            สแกนใบเสร็จ บันทึกรายรับ-รายจ่าย
+            สแกนใบเสร็จ บันทึกรายจ่าย
             <br />
             ง่ายในไม่กี่วินาที
           </>

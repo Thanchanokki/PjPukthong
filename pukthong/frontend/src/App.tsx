@@ -1,8 +1,7 @@
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
-import { Logo } from "./components/Logo";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
 import DashboardPage from "./pages/DashboardPage";
@@ -37,24 +36,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function Shell() {
-  const { logout } = useAuth();
-
   return (
     <div className="min-h-screen">
-      {/* เหลือแค่โลโก้กับปุ่มออกจากระบบ — เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/
-          สรุป/รายการ) ย้ายไป bottom nav แล้ว ไม่ต้องซ้ำกันสองที่ */}
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center px-4 py-3">
-          <Link to="/" aria-label="Pukthong หน้าหลัก">
-           <Logo variant="full" height={38} />
-          </Link>          <button
-            onClick={logout}
-            className="ml-auto rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
-          >
-            ออกจากระบบ
-          </button>
-        </div>
-      </header>
+      {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่แถวเดียวกับโปรไฟล์ในหน้าหลัก (ข้างไอคอน
+          เฟือง) เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/สรุป/รายการ) อยู่ที่ bottom nav */}
 
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6">

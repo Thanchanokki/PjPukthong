@@ -3,24 +3,24 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { type Monthly, type Transaction, baht, fetchMonthly } from "../api";
 import { useAuth } from "../auth";
-import { fetchBudget } from "../budget";
+import { type BudgetLine, fetchBudget } from "../budget";
 import {
   CalendarIcon,
   ChevronDownIcon,
+  DoorIcon,
   GearIcon,
   PersonIcon,
   PlusIcon,
 } from "../components/icons";
-import { mockIncomeFor } from "../income";
 
 /**
- * หน้าแรกใหม่ — ภาพรวมเดือนนี้ (ทักทาย, รายรับ/รายจ่าย/คงเหลือ, รายการล่าสุด, งบประมาณ)
+ * หน้าแรกใหม่ — ภาพรวมเดือนนี้ (ทักทาย, สรุปรายจ่าย, รายการล่าสุด, งบประมาณ)
  * แทนหน้าเดิมที่เด้งเข้าตัวเลือกบันทึกใบเสร็จทันที — ตัวเลือกนั้นย้ายไปอยู่หลังปุ่มลอย
  * (FAB) มุมขวาล่าง กดแล้วพาไป /add (เนื้อหาเดิมของ CapturePage ไม่เปลี่ยน)
  *
- * ⚠️ "รายรับ" เป็นค่าจำลองทั้งหมด (ดู income.ts) เพราะ backend ตัดระบบรายรับออกไปแล้ว
- * "งบประมาณเดือนนี้" ดึงจาก budget.ts ซึ่งตอนนี้ก็ยังเป็นข้อมูลจำลองเช่นกัน
- * (ดูรายละเอียดที่ไฟล์นั้น) ส่วน "รายจ่าย" และ "รายการล่าสุด" เป็นข้อมูลจริงจาก backend
+ * ไม่มี "รายรับ/คงเหลือ" แล้ว — backend ตัดระบบรายรับออก เหลือไว้จะเป็นเลขจำลองที่
+ * ไม่มีความหมายจริง ส่วนกรอบทองด้านบนใช้โชว์ยอดรายจ่ายเดือนนี้ (ข้อมูลจริงจาก backend)
+ * เทียบกับงบที่ตั้งไว้ (budget.ts — ยังเป็นข้อมูลจำลอง ดูรายละเอียดที่ไฟล์นั้น)
  */
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -68,15 +68,33 @@ function greeting(): string {
   return "สวัสดีตอนเย็น";
 }
 
+/** จำนวนวันที่เหลือในเดือน นับวันนี้ด้วย — เดือนที่ผ่านไปแล้ว = 0 (เหมือน BudgetPage) */
+function daysLeftIn(month: string): number {
+  const now = new Date();
+  const current = toMonth(now);
+  const d = parseMonth(month);
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  if (month < current) return 0;
+  if (month > current) return daysInMonth;
+  return daysInMonth - now.getDate() + 1;
+}
+
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
+
+  const prevMonth = shiftMonth(month, -1);
 
   const monthly = useQuery({
     queryKey: ["monthly", month, "purchased"],
     queryFn: () => fetchMonthly(month, "purchased"),
+  });
+  /** ใช้เทียบเปอร์เซ็นต์เปลี่ยนแปลงกับเดือนก่อนในกรอบทอง — เงียบๆ ถ้าโหลดไม่ทันหรือพลาด */
+  const prevMonthly = useQuery({
+    queryKey: ["monthly", prevMonth, "purchased"],
+    queryFn: () => fetchMonthly(prevMonth, "purchased"),
   });
   const budget = useQuery({
     queryKey: ["budget", month],
@@ -84,16 +102,45 @@ export default function HomePage() {
   });
 
   const expense = Number(monthly.data?.expense_total ?? 0);
-  const income = mockIncomeFor(month);
-  const balance = income - expense;
+  const prevExpense = Number(prevMonthly.data?.expense_total ?? 0);
+  const changePct = prevMonthly.isSuccess && prevExpense > 0
+    ? Math.round(((expense - prevExpense) / prevExpense) * 100)
+    : null;
+
+  const topCategory = [...(monthly.data?.by_category ?? [])].sort(
+    (a, b) => Number(b.total) - Number(a.total),
+  )[0];
+
+  const budgetedLines = (budget.data?.lines ?? []).filter((l) => l.limit !== null);
+  const totalLimit = budgetedLines.length > 0
+    ? budgetedLines.reduce((s, l) => s + Number(l.limit), 0)
+    : null;
+  /** หมวดที่ใกล้ครบงบ (≥80%) หรือเกินแล้ว — เรียงแย่สุดก่อน ใช้เตือนใต้กรอบทอง */
+  const nearLimit = budgetedLines
+    .filter((l) => Number(l.spent) / Math.max(Number(l.limit), 1) >= 0.8)
+    .sort(
+      (a, b) =>
+        Number(b.spent) / Math.max(Number(b.limit), 1) -
+        Number(a.spent) / Math.max(Number(a.limit), 1),
+    );
 
   return (
     <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
-      <HomeHeader name={user?.name ?? "ผู้ใช้"} />
+      <HomeHeader name={user?.name ?? "ผู้ใช้"} onLogout={logout} />
 
       <MonthField month={month} onChange={(m) => setParams({ month: m })} />
 
-      <StatRow income={income} expense={expense} balance={balance} />
+      <SpendHero
+        spent={expense}
+        limit={totalLimit}
+        daysLeft={daysLeftIn(month)}
+        changePct={changePct}
+        topCategory={topCategory}
+      />
+
+      {nearLimit.length > 0 && (
+        <BudgetWarning lines={nearLimit} onOpen={() => navigate(`/budget?month=${month}`)} />
+      )}
 
       <RecentTransactions
         month={month}
@@ -101,6 +148,7 @@ export default function HomePage() {
         error={monthly.isError ? (monthly.error as Error).message : null}
         transactions={monthly.data?.transactions}
         onSeeAll={() => navigate(`/monthly?month=${month}`)}
+        onAdd={() => navigate("/add")}
       />
 
       <BudgetWidget
@@ -128,7 +176,7 @@ export default function HomePage() {
 
 // ---------------------------------------------------------------- ส่วนบน
 
-function HomeHeader({ name }: { name: string }) {
+function HomeHeader({ name, onLogout }: { name: string; onLogout: () => void }) {
   return (
     <header className="flex items-center gap-3">
       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
@@ -136,11 +184,23 @@ function HomeHeader({ name }: { name: string }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs text-ink/55">{greeting()}</p>
-        <div className="flex items-center gap-1.5">
-          <h1 className="truncate text-base font-bold">{name}</h1>
-          {/* ยังไม่มีหน้าตั้งค่าโปรไฟล์จริง — ใส่ไว้ก่อนแบบกดไม่ได้ */}
-          <GearIcon className="h-4 w-4 shrink-0 text-ink/35" aria-hidden />
-        </div>
+        <h1 className="truncate text-base font-bold">{name}</h1>
+      </div>
+
+      {/* เฟือง (ยังไม่มีหน้าตั้งค่าโปรไฟล์จริง — ใส่ไว้ก่อนแบบกดไม่ได้) อยู่ข้างปุ่มออกจากระบบ */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <span className="grid h-8 w-8 place-items-center text-ink/35" aria-hidden>
+          <GearIcon className="h-4 w-4" />
+        </span>
+        <button
+          type="button"
+          onClick={onLogout}
+          aria-label="ออกจากระบบ"
+          title="ออกจากระบบ"
+          className="grid h-8 w-8 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
+        >
+          <DoorIcon className="h-5 w-5" />
+        </button>
       </div>
     </header>
   );
@@ -171,44 +231,107 @@ function MonthField({
   );
 }
 
-// ---------------------------------------------------------------- สถิติ
+// ---------------------------------------------------------------- สรุปรายจ่าย
 
-function StatRow({
-  income,
-  expense,
-  balance,
+type CategoryTotal = Monthly["by_category"][number];
+
+/**
+ * กรอบทอง — ของเดิมเคยเป็นการ์ดรายรับ/รายจ่าย/คงเหลือ แต่รายรับเป็นค่าจำลองที่ไม่มี
+ * ความหมายจริง เปลี่ยนมาเน้นเลขเดียวที่สำคัญที่สุดของแอปสายรายจ่าย: ใช้ไปแล้วเท่าไหร่
+ * เดือนนี้ พร้อม insight สั้นๆ 2 บรรทัด — หมวดที่ใช้เยอะสุด แล้วเทียบกับงบที่ตั้งไว้
+ * (ไม่มีงบก็แค่ชวนไปตั้ง ไม่ฟ้องเป็นค่าลบลอยๆ) badge % มุมขวาบนเทียบกับเดือนก่อน
+ */
+function SpendHero({
+  spent,
+  limit,
+  daysLeft,
+  changePct,
+  topCategory,
 }: {
-  income: number;
-  expense: number;
-  balance: number;
+  spent: number;
+  limit: number | null;
+  daysLeft: number;
+  changePct: number | null;
+  topCategory: CategoryTotal | undefined;
 }) {
-  const Card = ({
-    label,
-    value,
-    tone,
-  }: {
-    label: string;
-    value: string;
-    tone: "income" | "expense" | "balance";
-  }) => (
-    <div className="flex-1 rounded-xl border border-kraft bg-white px-3 py-3">
-      <p className="text-xs text-ink/55">{label}</p>
-      <p
-        className={`mt-1 truncate text-lg font-bold tabular-nums ${
-          tone === "income" ? "text-ledger" : tone === "expense" ? "text-stamp" : "text-ink"
-        }`}
-      >
-        {value}
-      </p>
-    </div>
-  );
+  const remaining = limit !== null ? limit - spent : null;
+  const over = remaining !== null && remaining < 0;
+  const perDay = remaining !== null && !over && daysLeft > 0 ? remaining / daysLeft : null;
+
+  const budgetLine =
+    limit === null
+      ? "ยังไม่ได้ตั้งงบเดือนนี้"
+      : over
+        ? `เกินงบที่ตั้งไว้ ฿${baht(-remaining!)}`
+        : perDay !== null
+          ? `เหลือในงบ ฿${baht(remaining!)} · วันละ ฿${baht(perDay)}`
+          : `เหลือในงบ ฿${baht(remaining!)}`;
 
   return (
-    <div className="flex gap-2.5">
-      <Card label="รายรับ" value={`+${baht(income)}`} tone="income" />
-      <Card label="รายจ่าย" value={`-${baht(expense)}`} tone="expense" />
-      <Card label="คงเหลือ" value={baht(balance)} tone="balance" />
-    </div>
+    <section
+      aria-label="สรุปรายจ่ายเดือนนี้"
+      className="rounded-2xl bg-gradient-to-br from-[#ECC87A] via-brass to-[#AD7D26] px-5 py-5 text-ink shadow-md shadow-brass/25"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium text-ink/70">ใช้จ่ายเดือนนี้</p>
+        {changePct !== null && (
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+              changePct > 0
+                ? "bg-stamp/15 text-stamp"
+                : changePct < 0
+                  ? "bg-ledger/15 text-ledger"
+                  : "bg-ink/10 text-ink/60"
+            }`}
+          >
+            {changePct > 0 ? "+" : ""}
+            {changePct}% จากเดือนก่อน
+          </span>
+        )}
+      </div>
+
+      <p className="mt-1 font-mono text-4xl font-bold leading-none tabular-nums">
+        ฿{baht(spent)}
+      </p>
+
+      {topCategory && Number(topCategory.total) > 0 && (
+        <p className="mt-2.5 text-sm text-ink/70">
+          ใช้เยอะสุดกับ {topCategory.category} ฿{baht(topCategory.total)}
+        </p>
+      )}
+
+      <p className={`mt-1 text-sm ${over ? "font-medium text-stamp" : "text-ink/70"}`}>
+        {budgetLine}
+      </p>
+    </section>
+  );
+}
+
+/** แถบเตือนหมวดที่ใกล้/เกินงบ — แตะพาไปหน้างบประมาณ กดดูรายละเอียดได้ทันที */
+function BudgetWarning({
+  lines,
+  onOpen,
+}: {
+  lines: BudgetLine[];
+  onOpen: () => void;
+}) {
+  const worst = lines[0];
+  const worstOver = Number(worst.spent) > Number(worst.limit);
+  const message =
+    lines.length === 1
+      ? `${worst.category} ${worstOver ? "เกินงบแล้ว" : "ใกล้ครบงบแล้ว"} ฿${baht(worst.spent)} / ฿${baht(worst.limit)}`
+      : `มี ${lines.length} หมวดใกล้หรือเกินงบแล้ว เริ่มจาก${worst.category}`;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2.5 rounded-xl border border-stamp/30 bg-stamp/5 px-4 py-3 text-left text-sm text-stamp hover:bg-stamp/10"
+    >
+      <span className="grid h-2 w-2 shrink-0 place-items-center rounded-full bg-stamp" aria-hidden />
+      <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+      <span className="shrink-0 text-xs text-stamp/70">ดูงบ ›</span>
+    </button>
   );
 }
 
@@ -220,12 +343,14 @@ function RecentTransactions({
   error,
   transactions,
   onSeeAll,
+  onAdd,
 }: {
   month: string;
   pending: boolean;
   error: string | null;
   transactions: Transaction[] | undefined;
   onSeeAll: () => void;
+  onAdd: () => void;
 }) {
   void month;
   // ใหม่สุดก่อน — purchased_at เรียงเป็น string 'YYYY-MM-DD' เทียบ lexical ได้ตรงๆ
@@ -251,7 +376,16 @@ function RecentTransactions({
       {error && <p className="px-4 pb-4 text-sm text-stamp">{error}</p>}
 
       {!pending && !error && recent.length === 0 && (
-        <p className="px-4 pb-4 text-sm text-ink/50">ยังไม่มีรายการในเดือนนี้</p>
+        <div className="px-4 pb-4">
+          <p className="text-sm text-ink/50">ยังไม่มีรายการในเดือนนี้</p>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="mt-2 rounded-lg border border-dashed border-stamp/40 px-3 py-1.5 text-sm font-medium text-stamp hover:bg-stamp/5"
+          >
+            + สแกนใบเสร็จแรกของเดือนนี้
+          </button>
+        </div>
       )}
 
       {!pending && !error && recent.length > 0 && (

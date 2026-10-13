@@ -260,3 +260,31 @@ export function PlusIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/**
+ * ไอคอนเพิ่มสำหรับแถบบนสุด (App.tsx Shell) — ก็อปวางต่อท้ายไฟล์ components/icons.tsx เดิม
+ * (import type { SVGProps } มีอยู่แล้วบนสุดของไฟล์นั้น ไม่ต้องเพิ่มซ้ำ)
+ */
+
+/** ไอคอนประตู — ใช้แทนปุ่ม "ออกจากระบบ" แบบไอคอนล้วน ไม่ใช้ข้อความ */
+export function DoorIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      {/* บานประตู */}
+      <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h8" />
+      <path d="M14 3h4a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-4" />
+      {/* ลูกบิด */}
+      <circle cx="11" cy="12" r="1" fill="currentColor" stroke="none" />
+      {/* ลูกศรออก — บอกว่าเป็นปุ่มออกจากระบบ ไม่ใช่แค่รูปประตูเฉยๆ */}
+      <path d="M17 12h4m0 0-2-2m2 2-2 2" />
+    </svg>
+  );
+}
