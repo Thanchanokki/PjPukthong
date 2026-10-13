@@ -12,6 +12,7 @@ import ManualPage from "./pages/ManualPage";
 import MonthlyPage from "./pages/MonthlyPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReviewPage from "./pages/ReviewPage";
+import SettingsPage from "./pages/SettingsPage";
 
 
 
@@ -39,7 +40,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function Shell() {
   return (
     <div className="min-h-screen">
-
+      {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่ในหน้าตั้งค่า (เปิดจากไอคอนเฟืองที่
+          หน้าหลัก) เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/สรุป/รายการ) อยู่ที่ bottom nav */}
 
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6">
@@ -52,6 +54,7 @@ function Shell() {
           <Route path="/monthly" element={<MonthlyPage />} />
            <Route path="/budget" element={<BudgetPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

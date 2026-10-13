@@ -7,7 +7,6 @@ import { type BudgetLine, fetchBudget } from "../budget";
 import {
   CalendarIcon,
   ChevronDownIcon,
-  DoorIcon,
   GearIcon,
   PersonIcon,
   PlusIcon,
@@ -81,7 +80,7 @@ function daysLeftIn(month: string): number {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
 
@@ -127,7 +126,7 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
-      <HomeHeader name={user?.name ?? "ผู้ใช้"} onLogout={logout} />
+      <HomeHeader name={user?.name ?? "ผู้ใช้"} onSettings={() => navigate("/settings")} />
 
       <MonthField month={month} onChange={(m) => setParams({ month: m })} />
 
@@ -177,7 +176,7 @@ export default function HomePage() {
 
 // ---------------------------------------------------------------- ส่วนบน
 
-function HomeHeader({ name, onLogout }: { name: string; onLogout: () => void }) {
+function HomeHeader({ name, onSettings }: { name: string; onSettings: () => void }) {
   return (
     <header className="flex items-center gap-3">
       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
@@ -188,21 +187,16 @@ function HomeHeader({ name, onLogout }: { name: string; onLogout: () => void }) 
         <h1 className="truncate text-base font-bold">{name}</h1>
       </div>
 
-      {/* เฟือง (ยังไม่มีหน้าตั้งค่าโปรไฟล์จริง — ใส่ไว้ก่อนแบบกดไม่ได้) อยู่ข้างปุ่มออกจากระบบ */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <span className="grid h-8 w-8 place-items-center text-ink/35" aria-hidden>
-          <GearIcon className="h-4 w-4" />
-        </span>
-        <button
-          type="button"
-          onClick={onLogout}
-          aria-label="ออกจากระบบ"
-          title="ออกจากระบบ"
-          className="grid h-8 w-8 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
-        >
-          <DoorIcon className="h-5 w-5" />
-        </button>
-      </div>
+      {/* เฟืองพาไปหน้าตั้งค่า — ออกจากระบบย้ายไปอยู่ในนั้นแล้ว */}
+      <button
+        type="button"
+        onClick={onSettings}
+        aria-label="ตั้งค่า"
+        title="ตั้งค่า"
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
+      >
+        <GearIcon className="h-5 w-5" />
+      </button>
     </header>
   );
 }
