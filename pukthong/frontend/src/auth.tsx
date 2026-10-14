@@ -30,6 +30,8 @@ import {
   loginAccount,
   registerAccount,
   setToken,
+  updateProfile as updateProfileRequest,
+  uploadAvatar as uploadAvatarRequest,
 } from "./api";
 
 type AuthValue = {
@@ -39,6 +41,13 @@ type AuthValue = {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  /**
+   * แก้ชื่อ/อีเมล — เรียก backend จริง (PATCH /api/auth/me) แล้วเขียนผลลัพธ์ทับ
+   * cache ["me"] ทันที ทุกหน้าที่ใช้ useAuth() เห็นค่าใหม่พร้อมกันโดยไม่ต้องรีเฟรช
+   */
+  updateProfile: (input: { name?: string; email?: string }) => Promise<void>;
+  /** เปลี่ยนรูปโปรไฟล์ — เหมือน updateProfile แต่ยิงเป็น multipart */
+  uploadAvatar: (file: File) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -71,6 +80,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTokenState(result.token);
       // เขียนลง cache เลย เพื่อไม่ต้องรอ /me อีกรอบก่อนเข้าหน้าแรก
       qc.setQueryData(["me"], result.user);
+    },
+    [qc],
+  );
+
+  const saveProfile = useCallback(
+    async (input: { name?: string; email?: string }) => {
+      const updated = await updateProfileRequest(input);
+      // เขียนทับ cache ["me"] ตรงนี้ที่เดียว — ทุกหน้าที่ดึงชื่อ/อีเมลจาก useAuth()
+      // (เช่นคำทักทายที่หน้าหลัก) จะเห็นค่าใหม่ทันทีโดยไม่ต้องรีเฟรช
+      qc.setQueryData(["me"], updated);
+    },
+    [qc],
+  );
+
+  const saveAvatar = useCallback(
+    async (file: File) => {
+      const updated = await uploadAvatarRequest(file);
+      qc.setQueryData(["me"], updated);
     },
     [qc],
   );
@@ -115,8 +142,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       register: async (name, email, password) =>
         apply(await registerAccount(name, email, password)),
       logout: signOut,
+      updateProfile: saveProfile,
+      uploadAvatar: saveAvatar,
     }),
-    [apply, data, isLoading, signOut, token],
+    [apply, data, isLoading, saveAvatar, saveProfile, signOut, token],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

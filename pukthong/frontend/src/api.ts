@@ -40,6 +40,13 @@ export type AuthUser = {
   email: string;
   currency: string;
   role: string;
+  /**
+   * URL รูปโปรไฟล์ — null = ยังไม่ได้ตั้ง (หน้า Settings จะ fallback เป็นไอคอนคน)
+   *
+   * backend แนบ token ต่อท้าย URL ให้แล้ว (แบบเดียวกับ imageUrl() ด้านล่าง) เพราะ
+   * <img src> แนบ Authorization header เองไม่ได้ — ใส่ลง <img src> ตรงๆ ได้เลย
+   */
+  avatar_url: string | null;
 };
 
 export type AuthResult = { token: string; user: AuthUser };
@@ -402,6 +409,46 @@ export async function loginAccount(
 /** เรียกตอนเปิดแอปเพื่อดูว่า token ที่เก็บไว้ยังใช้ได้ไหม */
 export async function fetchMe(): Promise<AuthUser> {
   return handle(await fetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() }));
+}
+
+/**
+ * แก้ชื่อ/อีเมลของตัวเอง:
+ *
+ *   PATCH /api/auth/me
+ *   body:   { "name"?: string, "email"?: string }
+ *   200:    AuthUser ตัวเต็ม (เหมือนที่ /api/auth/me ตอบ) ค่าที่แก้แล้วสะท้อนกลับมาด้วย
+ *   409:    อีเมลซ้ำกับคนอื่น — 400: ฟอร์แมตไม่ถูก (ทั้งคู่ตอบ { "detail": "ข้อความ" })
+ */
+export async function updateProfile(input: {
+  name?: string;
+  email?: string;
+}): Promise<AuthUser> {
+  return handle(
+    await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PATCH",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/**
+ * อัปโหลด/เปลี่ยนรูปโปรไฟล์ (เขียนทับรูปเดิม):
+ *
+ *   POST /api/auth/me/avatar   (multipart/form-data, field ชื่อ "file")
+ *   200:  AuthUser ตัวเต็ม พร้อม avatar_url ที่อัปเดตแล้ว
+ *   400/413/415: ไม่ใช่รูปจริง / ใหญ่เกิน MAX_UPLOAD_MB / ชนิดไฟล์ไม่รองรับ
+ */
+export async function uploadAvatar(file: File): Promise<AuthUser> {
+  const form = new FormData();
+  form.append("file", file);
+  return handle(
+    await fetch(`${API_BASE}/api/auth/me/avatar`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    }),
+  );
 }
 
 export const baht = (v: string | number | null | undefined) =>
