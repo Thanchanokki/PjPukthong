@@ -83,6 +83,56 @@ const client = () =>
     maxRetries: 0,
   });
 
+/** เตรียมรูปที่ส่ง OCR — ขาวดำ + ยืดคอนทราสต์ + ปรับด้านยาวเป็น longSide (ทั้งย่อและขยาย) */
+export function prepareForOcr(jpegBytes: Buffer, longSide = OCR_LONG_SIDE): Promise<Buffer> {
+  // ปรับเฉพาะรูปที่ส่ง OCR — ไม่แตะรูปต้นฉบับที่เก็บไว้หรือที่ส่งให้ AI
+  // ขาวดำ + ยืดคอนทราสต์ ช่วยใบความร้อนที่ซีดจาง และตัดสีพื้นหลังที่ไม่เกี่ยวออก
+  // (ทดสอบแล้ว: ขยายอย่างเดียวยังอ่าน 699 เป็น 659 ต้องมีขั้นนี้ด้วยถึงอ่านถูก)
+  return sharp(jpegBytes)
+    .resize({ width: longSide, height: longSide, fit: "inside" })
+    .greyscale()
+    .normalise()
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+/**
+ * เรียก Typhoon กับรูปที่เตรียมแล้ว — ตัวนี้ throw เมื่อเรียก API ไม่สำเร็จ
+ *
+ * แอปใช้ผ่าน readText (ซึ่งกลืน error) ส่วนสคริปต์ประเมินเรียกตัวนี้ตรงๆ เพื่อแยกให้ออกว่า
+ * "OCR อ่านไม่ได้จริง" กับ "API ล่ม/โดนจำกัดการเรียก" ซึ่งไม่ควรนับเป็นความผิดของ OCR
+ * คืน "" เมื่อไม่พบตัวอักษร หรือโมเดลพ่น prompt กลับมา
+ */
+export async function requestOcr(prepared: Buffer): Promise<string> {
+  const image = `data:image/jpeg;base64,${prepared.toString("base64")}`;
+  const response = await client().chat.completions.create({
+    model: settings.typhoonOcrModel,
+    // เอกสารของ Typhoon แนะนำไม่ให้ใช้ temperature สูงกับโมเดล OCR
+    temperature: 0.1,
+    // ใบยาวที่มีตารางหลายบรรทัดถูกถอดเป็น HTML ยาวมาก — กันคำตอบถูกตัดกลางใบ
+    max_tokens: 8000,
+    stream: false,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: TYPHOON_OCR_PROMPT },
+          { type: "image_url", image_url: { url: image } },
+        ],
+      },
+    ],
+  });
+
+  const text = response.choices[0]?.message?.content?.trim() ?? "";
+  // กันโมเดลพ่น prompt กลับมา — ถ้าเก็บไว้จะกลายเป็น "ข้อความ OCR" ปลอมใน DB
+  // และ ensureOcr จะใช้ของปลอมนี้ตลอดไปโดยไม่เรียก OCR ใหม่
+  if (text.startsWith(PROMPT_ECHO_PREFIX)) {
+    console.warn("Typhoon OCR คืน prompt กลับมาแทนข้อความ (ข้ามขั้น OCR) — เช็กชื่อโมเดลใน TYPHOON_OCR_MODEL");
+    return "";
+  }
+  return text;
+}
+
 /**
  * อ่านตัวอักษรจากรูป JPEG ที่ normalize แล้ว
  *
@@ -92,44 +142,7 @@ export async function readText(jpegBytes: Buffer): Promise<OcrResult> {
   if (!isEnabled()) return EMPTY;
 
   try {
-    // ปรับเฉพาะรูปที่ส่ง OCR — ไม่แตะรูปต้นฉบับที่เก็บไว้หรือที่ส่งให้ AI
-    // ขาวดำ + ยืดคอนทราสต์ ช่วยใบความร้อนที่ซีดจาง และตัดสีพื้นหลังที่ไม่เกี่ยวออก
-    // (ทดสอบแล้ว: ขยายอย่างเดียวยังอ่าน 699 เป็น 659 ต้องมีขั้นนี้ด้วยถึงอ่านถูก)
-    const prepared = await sharp(jpegBytes)
-      .resize({ width: OCR_LONG_SIDE, height: OCR_LONG_SIDE, fit: "inside" })
-      .greyscale()
-      .normalise()
-      .jpeg({ quality: 90 })
-      .toBuffer();
-    const image = `data:image/jpeg;base64,${prepared.toString("base64")}`;
-
-    const response = await client().chat.completions.create({
-      model: settings.typhoonOcrModel,
-      // เอกสารของ Typhoon แนะนำไม่ให้ใช้ temperature สูงกับโมเดล OCR
-      temperature: 0.1,
-      // ใบยาวที่มีตารางหลายบรรทัดถูกถอดเป็น HTML ยาวมาก — กันคำตอบถูกตัดกลางใบ
-      max_tokens: 8000,
-      stream: false,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: TYPHOON_OCR_PROMPT },
-            { type: "image_url", image_url: { url: image } },
-          ],
-        },
-      ],
-    });
-
-    const text = response.choices[0]?.message?.content?.trim() ?? "";
-
-    // กันโมเดลพ่น prompt กลับมา — ถ้าเก็บไว้จะกลายเป็น "ข้อความ OCR" ปลอมใน DB
-    // และ ensureOcr จะใช้ของปลอมนี้ตลอดไปโดยไม่เรียก OCR ใหม่
-    if (text.startsWith(PROMPT_ECHO_PREFIX)) {
-      console.warn("Typhoon OCR คืน prompt กลับมาแทนข้อความ (ข้ามขั้น OCR) — เช็กชื่อโมเดลใน TYPHOON_OCR_MODEL");
-      return EMPTY;
-    }
-
+    const text = await requestOcr(await prepareForOcr(jpegBytes));
     if (!text) {
       console.warn("Typhoon OCR ไม่พบตัวอักษรในภาพ (ข้ามขั้น OCR)");
       return EMPTY;

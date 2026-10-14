@@ -48,7 +48,7 @@ export interface ScanConfidence {
  * ต้อง normalize เพราะบนใบพิมพ์ '1,234.50' แต่ AI ตอบ '1234.5' — ถ้าเทียบสตริงตรงๆ
  * จะไม่ตรงกันทั้งที่เป็นเลขเดียวกัน จึงแปลงทั้งสองฝั่งเป็น Decimal แล้วเทียบค่า
  */
-function numbersIn(text: string): Set<string> {
+export function numbersIn(text: string): Set<string> {
   const found = new Set<string>();
   for (const raw of text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []) {
     try {
@@ -61,7 +61,7 @@ function numbersIn(text: string): Set<string> {
 }
 
 /** ค่าเงินนี้ปรากฏอยู่ในข้อความ OCR จริงไหม */
-function amountIsGrounded(value: string | null, pool: Set<string>): boolean {
+export function amountIsGrounded(value: string | null, pool: Set<string>): boolean {
   const d = dec(value);
   if (d === null) return false;
   // เทียบหลายรูป: 90, 90.00, 90.0 — บนใบพิมพ์แบบไหนก็ได้
@@ -79,7 +79,7 @@ const squash = (s: string) => s.replace(/\s+/g, "").toLowerCase();
  * รวมปี พ.ศ. ด้วย เพราะ AI แปลงเป็น ค.ศ. ให้แล้วตามที่ prompt สั่ง แต่บนใบยังเป็น
  * พ.ศ. อยู่ — ถ้าไม่ลองรูปนี้ ใบไทยเกือบทุกใบจะถูกตัดสินว่า "วันที่ไม่มีบนใบ"
  */
-function dateIsGrounded(iso: string, ocr: string): boolean {
+export function dateIsGrounded(iso: string, ocr: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return false;
   const [, y, mo, d] = m;
