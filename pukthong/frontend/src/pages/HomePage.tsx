@@ -96,9 +96,8 @@ export default function HomePage() {
     queryFn: () => fetchMonthly(prevMonth, "purchased"),
   });
   const budget = useQuery({
-    // ใช้แกนเดียวกับค่าเริ่มต้นของหน้างบ (ตามประเภทร้าน) การ์ดนี้กับหน้างบจะได้ตรงกัน
-    queryKey: ["budget", month, "merchant"],
-    queryFn: () => fetchBudget(month, "merchant"),
+    queryKey: ["budget", month],
+    queryFn: () => fetchBudget(month),
   });
 
   const expense = Number(monthly.data?.expense_total ?? 0);
@@ -126,7 +125,11 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
-      <HomeHeader name={user?.name ?? "ผู้ใช้"} onSettings={() => navigate("/settings")} />
+      <HomeHeader
+        name={user?.name ?? "ผู้ใช้"}
+        avatarUrl={user?.avatar_url}
+        onSettings={() => navigate("/settings")}
+      />
 
       <MonthField month={month} onChange={(m) => setParams({ month: m })} />
 
@@ -176,12 +179,29 @@ export default function HomePage() {
 
 // ---------------------------------------------------------------- ส่วนบน
 
-function HomeHeader({ name, onSettings }: { name: string; onSettings: () => void }) {
+function HomeHeader({
+  name,
+  avatarUrl,
+  onSettings,
+}: {
+  name: string;
+  /** รูปโปรไฟล์ที่ตั้งไว้ในหน้าตั้งค่า — undefined/null = ยังไม่ได้ตั้ง ใช้ไอคอนคนแทน */
+  avatarUrl?: string | null;
+  onSettings: () => void;
+}) {
   return (
     <header className="flex items-center gap-3">
-      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
-        <PersonIcon className="h-6 w-6" />
-      </span>
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="h-12 w-12 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
+          <PersonIcon className="h-6 w-6" />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-xs text-ink/55">{greeting()}</p>
         <h1 className="truncate text-base font-bold">{name}</h1>
