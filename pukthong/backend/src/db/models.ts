@@ -30,6 +30,13 @@ export interface UserDoc {
   currency: string;
   /** user | admin */
   role: string;
+  /**
+   * ที่อยู่ไฟล์รูปโปรไฟล์ใต้ UPLOAD_DIR — ไม่มี/null = ยังไม่ได้ตั้งรูป
+   * (บัญชีที่สมัครก่อนมีฟีเจอร์นี้ไม่มีฟิลด์นี้เลย จึงเป็น optional)
+   */
+  avatarKey?: string | null;
+  /** เวลาที่เปลี่ยนรูปล่าสุด — ใส่ใน URL เป็น ?v= ให้ browser โหลดรูปใหม่แทนของใน cache */
+  avatarUpdatedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -28,3 +28,14 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/**
+ * แก้โปรไฟล์ — ส่งมาเฉพาะฟิลด์ที่จะแก้ก็ได้ ฟิลด์ที่ไม่ส่งมาไม่ถูกแตะ
+ * (ชื่อใช้กติกาเดียวกับตอนสมัคร อีเมลผ่าน emailField เหมือนกัน — ตัดช่องว่าง+ตัวเล็ก)
+ */
+export const updateProfileSchema = z.object({
+  name: registerSchema.shape.name.optional(),
+  email: emailField.optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

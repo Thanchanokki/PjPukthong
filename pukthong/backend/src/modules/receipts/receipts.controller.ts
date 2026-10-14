@@ -8,35 +8,15 @@
  */
 import type { FastifyInstance } from "fastify";
 
-import { maxUploadBytes, settings } from "../../config/index.js";
-import { httpError, requireUuid } from "../../shared/errors.js";
+import { requireUuid } from "../../shared/errors.js";
+import { readImageUpload } from "../../shared/upload.js";
 import { requireAuth, requireAuthAllowQueryToken } from "../auth/auth.security.js";
-import { ALLOWED_MIME } from "./image.storage.js";
 import { receiptRawOut } from "./receipts.serializer.js";
 import * as service from "./receipts.service.js";
 
 export default async function receiptsController(app: FastifyInstance) {
   app.post("/api/receipts", { preHandler: requireAuth }, async (req, reply) => {
-    const part = await req.file();
-    if (!part) throw httpError(400, "ไม่พบไฟล์ที่อัปโหลด");
-
-    if (part.mimetype && !ALLOWED_MIME.has(part.mimetype.toLowerCase())) {
-      throw httpError(
-        415,
-        `ไม่รองรับไฟล์ชนิด ${part.mimetype} (รองรับ JPEG, PNG, WebP, HEIC)`,
-      );
-    }
-
-    let raw: Buffer;
-    try {
-      raw = await part.toBuffer();
-    } catch (err) {
-      throw httpError(413, `ไฟล์ใหญ่เกิน ${settings.maxUploadMb} MB`, err);
-    }
-    if (part.file.truncated || raw.length > maxUploadBytes) {
-      throw httpError(413, `ไฟล์ใหญ่เกิน ${settings.maxUploadMb} MB`);
-    }
-    if (raw.length === 0) throw httpError(400, "ไฟล์ว่างเปล่า");
+    const raw = await readImageUpload(req);
 
     const result = await service.createFromImage(req.userId, raw);
 

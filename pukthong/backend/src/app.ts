@@ -38,7 +38,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       cb(null, false);
     },
     credentials: false,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
   await app.register(multipart, {
