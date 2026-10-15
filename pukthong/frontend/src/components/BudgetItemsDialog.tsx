@@ -8,6 +8,9 @@ export type BudgetItem = {
   date: string;
   merchant: string | null;
   amount: number;
+  /** ส่วนลดของรายการนี้ (บวก) — มีค่าเมื่อซื้อในราคาลด */
+  discount?: number | null;
+  discountLabel?: string | null;
 };
 
 const thaiDate = (iso: string) =>
@@ -92,6 +95,12 @@ export function BudgetItemsDialog({
                     {thaiDate(it.date)}
                     {it.merchant && ` · ${it.merchant}`}
                   </p>
+                  {it.discount ? (
+                    <p className="text-xs text-red-700">
+                      🏷️ ส่วนลด{it.discountLabel ? ` ${it.discountLabel}` : ""} −{baht(it.discount)} (ราคาเต็ม{" "}
+                      {baht(it.amount + it.discount)})
+                    </p>
+                  ) : null}
                 </div>
                 <span className="shrink-0 font-mono text-sm tabular-nums">{baht(it.amount)}</span>
               </li>

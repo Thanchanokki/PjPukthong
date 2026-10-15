@@ -21,6 +21,8 @@
  *
  * เก็บได้เฉพาะ hash เท่านั้น — รหัสผ่านจริงห้ามแตะฐานข้อมูล
  */
+import type { BillDiscount } from "../shared/discounts.js";
+
 export interface UserDoc {
   _id: string;
   name: string;
@@ -71,6 +73,13 @@ export interface TransactionItemDoc {
   name: string | null;
   qty: string | null;
   unitPrice: string | null;
+  /** ราคาก่อนส่วนลด — null ในรายการเก่าหรือรายการที่ไม่มีส่วนลด */
+  grossAmount?: string | null;
+  /** ส่วนลดของสินค้านี้ (บวก) */
+  discount?: string | null;
+  /** ข้อความของส่วนลดตามที่พิมพ์ เช่น "HairJew 20.57%" */
+  discountLabel?: string | null;
+  /** ราคาสุทธิหลังหักส่วนลด — ใช้รวมยอดรายหมวดและงบ */
   amount: string | null;
   /** ตัวอักษรกำกับราคาบนใบเสร็จ (เช่น N) — prompt สั่งห้ามตัดทิ้ง */
   flag: string | null;
@@ -108,6 +117,19 @@ export interface CategoryDoc {
   aliases: string[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** ข้อมูลกรมธรรม์ — เงินเก็บเป็น string ตามกติกาเรื่องเงินด้านบน */
+export interface InsuranceDoc {
+  insurer: string | null;
+  policyNumber: string | null;
+  /** id ใน shared/insurance.ts (life, health, health_parents, annuity, non_life, other) */
+  policyType: string | null;
+  insuredName: string | null;
+  /** 'YYYY-MM-DD' */
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  premium: string | null;
 }
 
 export interface TransactionDoc {
@@ -153,13 +175,21 @@ export interface TransactionDoc {
   uploadedAt: Date;
   currency: string;
   subtotal: string | null;
+  /** ผลรวมส่วนลดท้ายบิล = ผลรวม billDiscounts (เก็บไว้ให้โค้ดที่ใช้ตัวเลขก้อนเดียวทำงานต่อได้) */
   discount: string | null;
+  /** ส่วนลดท้ายบิลแยกก้อน: ส่วนลด / สมาชิก / คูปอง / ใช้คะแนน (ดู shared/discounts.ts) */
+  billDiscounts?: BillDiscount[];
   serviceCharge: string | null;
   vatRate: string | null;
   vatAmount: string | null;
   total: string;
   /** หมวดของทั้งใบ = CategoryDoc._id — ใช้เฉพาะใบที่ไม่มีรายการย่อย */
   categoryId: string | null;
+  /**
+   * ข้อมูลกรมธรรม์ — มีเฉพาะใบเสร็จค่าเบี้ยประกัน (merchantType = insurance) ซึ่งไม่มีรายการสินค้า
+   * ใช้สรุปเบี้ยประกันรายปีเพื่อลดหย่อนภาษี (ดู modules/tax)
+   */
+  insurance?: InsuranceDoc | null;
   paymentMethod: string | null;
   paymentChannel: string | null;
   note: string | null;

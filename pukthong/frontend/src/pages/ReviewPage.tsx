@@ -3,12 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  BillDiscount,
   ExtractResult,
   LineItem,
   createTransaction,
   extractReceipt,
   imageUrl,
 } from "../api";
+import { useMerchantTypes } from "../categories";
 import {
   ItemsEditor,
   SaveBar,
@@ -19,6 +21,7 @@ import { UnsupportedDialog } from "../components/UnsupportedDialog";
 import {
   EMPTY,
   type Form,
+  applyMerchantDefault,
   buildPayload,
   canSave,
   draftToForm,
@@ -31,6 +34,7 @@ export default function ReviewPage() {
 
   const [form, setForm] = useState<Form>(EMPTY);
   const [items, setItems] = useState<LineItem[]>([]);
+  const [billDiscounts, setBillDiscounts] = useState<BillDiscount[]>([]);
   const [result, setResult] = useState<ExtractResult | null>(null);
   const [pane, setPane] = useState<"image" | "form">("form");
   const autoRan = useRef(false);
@@ -45,11 +49,12 @@ export default function ReviewPage() {
       setDismissed(false);
       setForm(draftToForm(res.draft));
       setItems(res.draft.line_items);
+      setBillDiscounts(res.draft.bill_discounts ?? []);
     },
   });
 
   const save = useMutation({
-    mutationFn: () => createTransaction(buildPayload(form, items, receiptId)),
+    mutationFn: () => createTransaction(buildPayload(form, items, receiptId, billDiscounts)),
     onSuccess: (tx) => // บันทึกเสร็จแล้วพาไปหน้าสรุปทันที — ให้เห็นเลยว่ารายจ่ายก้อนนี้ไปอยู่หมวดไหน
       navigate(`/dashboard?month=${tx.purchased_at.slice(0, 7)}`),
   });
@@ -76,8 +81,16 @@ export default function ReviewPage() {
     return set;
   }, [confidence, warnings]);
 
-  const set = (k: keyof Form) => (v: string) =>
+  const { data: merchantTypes = [] } = useMerchantTypes();
+  const set = (k: keyof Form) => (v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
+    // เปลี่ยนประเภทร้าน -> ตั้งหมวดของทุกรายการเป็นหมวดเริ่มต้นของร้านนั้น (ตามสเปก)
+    if (k === "merchant_type") {
+      setItems((xs) => applyMerchantDefault(xs, merchantTypes.find((t) => t.id === v)));
+    }
+  };
+  /** ใบประกันภัยไม่มีรายการสินค้า — ซ่อนช่องรายการ (ข้อมูลกรมธรรม์อยู่ในฟอร์มด้านบนแทน) */
+  const noItems = merchantTypes.find((t) => t.id === form.merchant_type)?.no_items ?? false;
 
   const imagePane = (
     <div className="rounded-xl border border-slate-200 bg-white p-2">
@@ -149,11 +162,16 @@ export default function ReviewPage() {
 
       <TransactionFields form={form} onChange={set} warnSet={warnSet} />
 
-      <ItemsEditor
-        items={items}
-        setItems={setItems}
-        incomplete={result ? !result.draft.line_items_complete : false}
-      />
+      {!noItems && (
+        <ItemsEditor
+          items={items}
+          setItems={setItems}
+          totals={form}
+          billDiscounts={billDiscounts}
+          setBillDiscounts={setBillDiscounts}
+          incomplete={result ? !result.draft.line_items_complete : false}
+        />
+      )}
 
       {save.isError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">

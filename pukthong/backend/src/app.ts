@@ -16,6 +16,7 @@ import {
 } from "./config/index.js";
 import authController from "./modules/auth/auth.controller.js";
 import budgetsController from "./modules/budgets/budgets.controller.js";
+import taxController from "./modules/tax/tax.controller.js";
 import categoriesController from "./modules/categories/categories.controller.js";
 import receiptsController from "./modules/receipts/receipts.controller.js";
 import transactionsController from "./modules/transactions/transactions.controller.js";
@@ -86,6 +87,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(transactionsController);
   await app.register(categoriesController);
   await app.register(budgetsController);
+  await app.register(taxController);
 
   /** ไม่คืนค่า key ใดๆ — บอกแค่ว่าตั้งไว้แล้วหรือยัง */
   app.get("/api/health", async () => ({

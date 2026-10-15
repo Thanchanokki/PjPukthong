@@ -14,83 +14,117 @@ export interface MerchantType extends Matchable {
   icon: string;
   /** อธิบายให้ AI เลือกถูก — แปะลง prompt */
   hint: string;
+  /**
+   * หมวดสินค้าเริ่มต้นของร้านประเภทนี้ (CategoryDoc._id) — null = ร้านขายของปนกัน ให้ AI จัดทีละชิ้น
+   *
+   * มีค่า = ทุกรายการในใบถูกตั้งเป็นหมวดนี้ทันที (ผู้ใช้แก้รายชิ้นได้ในหน้าตรวจ)
+   * เช่น ใบ Starbucks ทุกรายการเป็น "อาหาร" แม้จะเป็นกาแฟก็ตาม — ตามสเปกของโปรเจกต์
+   */
+  defaultCategory: string | null;
+  /** ใบประเภทนี้ไม่มีรายการสินค้า (ใบเสร็จค่าเบี้ยประกัน) — เก็บข้อมูลกรมธรรม์แทน */
+  noItems?: boolean;
 }
 
+/**
+ * aliases รวม id ชุดเก่าไว้ด้วย (fashion, housing_bills, other_shop …) ให้ข้อมูลและเฉลยที่ใช้
+ * id เดิมยังแปลงเป็นประเภทใหม่ได้ — ดู scripts/migrate-merchant-types-v2.ts
+ */
 export const MERCHANT_TYPES: MerchantType[] = [
   {
     id: "convenience",
-    name: "ร้านสะดวกซื้อ/ร้านค้าทั่วไป",
+    name: "ร้านสะดวกซื้อ",
     icon: "🏪",
-    hint: "7-Eleven, CJ, Lotus's, Big C, Tops, CP Axtra/Makro, มินิมาร์ท, ร้านโชห่วย, ซูเปอร์มาร์เก็ต",
-    aliases: ["ร้านค้าทั่วไป", "ร้านสะดวกซื้อ", "ซูเปอร์มาร์เก็ต"],
+    hint: "7-Eleven, FamilyMart, Lotus's go fresh, CJ More, มินิมาร์ท — ขายของหลายหมวดปนกัน",
+    aliases: ["ร้านสะดวกซื้อ/ร้านค้าทั่วไป"],
+    defaultCategory: null,
+  },
+  {
+    id: "supermarket",
+    name: "ซูเปอร์มาร์เก็ต/ไฮเปอร์มาร์เก็ต",
+    icon: "🛒",
+    hint: "Lotus's, Big C, Tops, Makro (CP Axtra), Villa Market, Gourmet Market",
+    aliases: ["ซูเปอร์มาร์เก็ต", "ไฮเปอร์มาร์เก็ต", "ห้างค้าปลีก", "wholesale"],
+    defaultCategory: null,
   },
   {
     id: "restaurant",
-    name: "ร้านอาหาร/คาเฟ่",
+    name: "ร้านอาหาร/คาเฟ่/เครื่องดื่ม",
     icon: "🍜",
-    hint: "ร้านอาหาร, ร้านกาแฟ, เบเกอรี่, ฟาสต์ฟู้ด, ฟู้ดคอร์ท, ร้านชานม",
-    aliases: ["ร้านอาหาร", "คาเฟ่", "ร้านกาแฟ"],
+    hint: "MK, S&P, Café Amazon, Starbucks, ฟู้ดคอร์ท, ร้านอาหาร, ร้านกาแฟ, ร้านชานม, เบเกอรี่, ฟาสต์ฟู้ด",
+    aliases: ["ร้านอาหาร/คาเฟ่", "ร้านอาหาร", "คาเฟ่", "ร้านกาแฟ", "cafe", "fast_food"],
+    defaultCategory: "food",
   },
   {
-    id: "pharmacy_beauty",
-    name: "เครื่องสำอาง/ร้านขายยา",
+    id: "pharmacy",
+    name: "ร้านขายยา/คลินิก/โรงพยาบาล",
+    icon: "💊",
+    hint: "ร้านขายยาทั่วไป, Fascino, คลินิก, โรงพยาบาล, ทันตกรรม — ขายยาหรือบริการรักษาเป็นหลัก",
+    aliases: ["ร้านขายยา", "คลินิก", "โรงพยาบาล", "medical", "pharmacy_beauty"],
+    defaultCategory: "health",
+  },
+  {
+    // แยกจากร้านขายยา: Boots/Watsons ขายเครื่องสำอางและของใช้ส่วนตัวมากกว่ายา
+    // ถ้าตั้งทุกรายการเป็นสุขภาพและยา ผู้ใช้ต้องแก้แทบทุกชิ้น จึงให้ AI จัดรายชิ้น
+    id: "beauty_personal",
+    name: "ร้านเครื่องสำอางและของใช้ส่วนตัว",
     icon: "💄",
-    hint: "Watsons, Boots, EVEANDBOY, ร้านขายยา, ร้านเครื่องสำอาง, ร้านบิวตี้",
-    aliases: ["ร้านขายยา", "เครื่องสำอาง"],
+    hint: "Boots, Watsons, EVEANDBOY, Beautrium, Sephora, เคาน์เตอร์แบรนด์เครื่องสำอางในห้าง, ร้านบิวตี้ — ขายทั้งยา เครื่องสำอาง ของใช้ส่วนตัวปนกัน",
+    aliases: ["ร้านเครื่องสำอาง", "ร้านบิวตี้", "เครื่องสำอาง", "beauty"],
+    defaultCategory: null,
   },
   {
-    id: "fashion",
-    name: "แฟชั่น/เสื้อผ้า",
-    icon: "👗",
-    hint: "H&M, Uniqlo, ร้านเสื้อผ้า รองเท้า กระเป๋า เครื่องประดับ",
-    aliases: ["เสื้อผ้า", "แฟชั่น"],
+    id: "department_fashion",
+    name: "ห้างสรรพสินค้า/แฟชั่น",
+    icon: "🛍️",
+    hint: "Central, Robinson, The Mall, Uniqlo, H&M, ร้านเสื้อผ้า รองเท้า กระเป๋า เครื่องประดับ, ร้านไอที, ร้านหนังสือในห้าง",
+    aliases: ["แฟชั่น/เสื้อผ้า", "ห้างสรรพสินค้า", "แฟชั่น", "fashion", "clothing", "accessories", "electronics", "stationery_books"],
+    defaultCategory: "apparel",
+  },
+  {
+    id: "home_hardware",
+    name: "วัสดุและของใช้ในบ้าน",
+    icon: "🔨",
+    hint: "HomePro, ไทวัสดุ, Global House, Mr. DIY, Daiso, IKEA",
+    aliases: ["ของใช้ในบ้าน", "วัสดุก่อสร้าง", "home_goods"],
+    defaultCategory: "household",
   },
   {
     id: "fuel_transport",
-    name: "ปั๊มน้ำมัน/เดินทาง",
+    name: "ปั๊มน้ำมัน/การเดินทาง",
     icon: "⛽",
-    hint: "ปั๊มน้ำมัน (PTT, บางจาก, Shell), ทางด่วน, ที่จอดรถ, ขนส่งสาธารณะ, แท็กซี่, สายการบิน",
-    aliases: ["ปั๊มน้ำมัน", "เดินทาง"],
+    hint: "PTT, บางจาก, Shell, Caltex, ค่าที่จอดรถ, ทางด่วน, ขนส่งสาธารณะ, แท็กซี่, สายการบิน",
+    aliases: ["ปั๊มน้ำมัน", "การเดินทาง", "เดินทาง"],
+    defaultCategory: "transport",
   },
   {
-    id: "housing_bills",
-    name: "ที่พัก/ค่าเช่า/บิล",
-    icon: "🏠",
-    hint: "หอพัก, คอนโด, โรงแรม, ค่าเช่า, ค่าน้ำ ค่าไฟ อินเทอร์เน็ต โทรศัพท์",
-    aliases: ["ที่พัก", "ค่าเช่า", "บิล"],
+    id: "bills_services",
+    name: "บิลและบริการ",
+    icon: "🧾",
+    hint: "Counter Service, ไปรษณีย์, การประปา, การไฟฟ้า, ค่าโทรศัพท์/อินเทอร์เน็ต, ค่าเช่าหอพัก",
+    aliases: ["ที่พัก/ค่าเช่า/บิล", "บิล", "ค่าเช่า", "housing_bills", "rent"],
+    defaultCategory: "housing",
   },
   {
-    id: "electronics",
-    name: "อิเล็กทรอนิกส์",
-    icon: "📱",
-    hint: "ร้านมือถือ คอมพิวเตอร์ เครื่องใช้ไฟฟ้า (Power Buy, Banana IT, Apple)",
-    aliases: ["ไอที", "เครื่องใช้ไฟฟ้า"],
+    id: "insurance",
+    name: "ประกันภัย",
+    icon: "🛡️",
+    hint: "ใบเสร็จค่าเบี้ยประกันจาก AIA, เมืองไทยประกันชีวิต, กรุงเทพประกันภัย, FWD, วิริยะประกันภัย, ไทยประกันชีวิต",
+    aliases: ["ประกัน", "ประกันชีวิต", "ประกันสุขภาพ"],
+    defaultCategory: "insurance",
+    noItems: true,
   },
   {
-    id: "stationery_books",
-    name: "เครื่องเขียน/ร้านหนังสือ",
-    icon: "📚",
-    hint: "B2S, ร้านหนังสือ, ร้านเครื่องเขียน, ร้านถ่ายเอกสาร",
-    aliases: ["เครื่องเขียน", "ร้านหนังสือ"],
-  },
-  {
-    id: "entertainment",
-    name: "บันเทิง",
-    icon: "🎬",
-    hint: "โรงหนัง, คอนเสิร์ต, สวนสนุก, เกม, สตรีมมิ่ง, ฟิตเนส",
-    aliases: ["บันเทิง"],
-  },
-  {
-    id: "other_shop",
-    name: "ร้านอื่นๆ",
-    icon: "🛍️",
-    hint: "ร้านที่ไม่เข้าประเภทข้างบน",
-    aliases: ["อื่นๆ", "อื่น"],
+    id: "general_other",
+    name: "ร้านค้าทั่วไป/อื่นๆ",
+    icon: "🏬",
+    hint: "ตลาด, ร้านโชห่วย, ร้านที่ไม่เข้าประเภทข้างบน — อาจมีสินค้าหลายหมวดปนกัน",
+    aliases: ["ร้านอื่นๆ", "อื่นๆ", "อื่น", "other_shop", "entertainment", "sports", "gift"],
+    defaultCategory: null,
   },
 ];
 
 /** ใบที่ยังไม่มีประเภทร้าน (ใบเก่า/AI อ่านไม่ออก) ถูกนับเข้าช่องนี้ตอนสรุป */
-export const MERCHANT_FALLBACK_ID = "other_shop";
+export const MERCHANT_FALLBACK_ID = "general_other";
 
 const byId = new Map(MERCHANT_TYPES.map((t) => [t.id, t]));
 
