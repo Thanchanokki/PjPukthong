@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { receipts } from "../../db/client.js";
 import type { ReceiptDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
+import { merchantTypeOf } from "../../shared/merchant-types.js";
 import { loadBook } from "../categories/categories.service.js";
 import * as ai from "./ai.provider.js";
 import { scanConfidence } from "./confidence.js";
@@ -167,6 +168,23 @@ export async function extract(userId: string, receiptId: string) {
     item.category_guess =
       book.match(guess) ?? book.match(guess?.split(">").pop()) ?? null;
   }
+
+  /**
+   * หมวดเริ่มต้นตามประเภทร้าน (สเปกของโปรเจกต์)
+   * - ร้านที่มีหมวดเริ่มต้น (ร้านอาหาร = อาหาร, ร้านยา = สุขภาพและยา …) ทุกรายการได้หมวดนั้น
+   *   แทนที่ที่ AI เดารายชิ้น — ผู้ใช้แก้รายชิ้นได้ในหน้าตรวจ
+   * - ร้านขายของปนกัน (สะดวกซื้อ/ซูเปอร์/ทั่วไป) ใช้หมวดที่ AI จัดรายชิ้นตามเดิม
+   * - ใบประกันภัยไม่มีรายการสินค้า (เก็บข้อมูลกรมธรรม์แทน) — ล้างรายการที่ AI อาจอ่านติดมา
+   */
+  if (draft.merchant_type) {
+    const type = merchantTypeOf(draft.merchant_type);
+    if (type.noItems) {
+      draft.line_items = [];
+    } else if (type.defaultCategory && book.isSelectable(type.defaultCategory)) {
+      for (const item of draft.line_items) item.category_guess = type.defaultCategory;
+    }
+  }
+  if (draft.merchant_type !== "insurance") draft.insurance = null;
 
   await receipts.updateOne(
     { _id: receiptId },

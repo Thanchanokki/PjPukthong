@@ -52,7 +52,14 @@ export default async function categoriesController(app: FastifyInstance) {
 
   /** ประเภทร้าน (ชุดตายตัวของระบบ) — ใช้ในดรอปดาวน์ "ประเภทร้าน" ของฟอร์มใบเสร็จ */
   app.get("/api/merchant-types", async () =>
-    MERCHANT_TYPES.map((t) => ({ id: t.id, name: t.name, icon: t.icon })),
+    MERCHANT_TYPES.map((t) => ({
+      id: t.id,
+      name: t.name,
+      icon: t.icon,
+      // ฟอร์มใช้ตั้งหมวดของทุกรายการเมื่อผู้ใช้เปลี่ยนประเภทร้าน (null = จัดรายชิ้น)
+      default_category_id: t.defaultCategory,
+      no_items: t.noItems ?? false,
+    })),
   );
 
   app.post("/api/categories", async (req, reply) => {

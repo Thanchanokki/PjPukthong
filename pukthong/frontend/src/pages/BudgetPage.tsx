@@ -284,6 +284,8 @@ function itemsOf(txs: Transaction[], axis: BudgetAxis, line: BudgetLine): Budget
         date: tx.purchased_at,
         merchant: tx.merchant_name,
         amount,
+        discount: it.discount ? Number(it.discount) : null,
+        discountLabel: it.discount_label ?? null,
       });
     }
   }

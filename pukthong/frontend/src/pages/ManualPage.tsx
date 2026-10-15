@@ -2,8 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { LineItem, baht, createTransaction } from "../api";
+import { BillDiscount, LineItem, baht, createTransaction } from "../api";
 import { ArrowLeftIcon } from "../components/icons";
+import { useMerchantTypes } from "../categories";
 import {
   ItemsEditor,
   SaveBar,
@@ -12,6 +13,7 @@ import {
 import {
   EMPTY,
   type Form,
+  applyMerchantDefault,
   buildPayload,
   canSave,
   emptyItem,
@@ -35,11 +37,12 @@ export default function ManualPage() {
    * รายการที่กรอกเองจะไม่มีทางระบุหมวดได้เลย แล้วตกไปกอง "อื่นๆ" ทั้งหมดใน dashboard
    */
   const [items, setItems] = useState<LineItem[]>(() => [emptyItem()]);
+  const [billDiscounts, setBillDiscounts] = useState<BillDiscount[]>([]);
   const [saved, setSaved] = useState<{ total: string; count: number } | null>(null);
 
   const save = useMutation({
     mutationFn: (opts: { andNew: boolean }) =>
-      createTransaction(buildPayload(form, items, null)).then((tx) => ({ tx, opts })),
+      createTransaction(buildPayload(form, items, null, billDiscounts)).then((tx) => ({ tx, opts })),
     onSuccess: ({ tx, opts }) => {
       if (!opts.andNew) {
         // บันทึกเสร็จแล้วพาไปหน้าสรุปทันที — ให้เห็นเลยว่ารายจ่ายก้อนนี้ไปอยู่หมวดไหน
@@ -50,16 +53,26 @@ export default function ManualPage() {
       setSaved((s) => ({ total: tx.total, count: (s?.count ?? 0) + 1 }));
       setForm((f) => ({ ...blank(), purchased_at: f.purchased_at }));
       setItems([emptyItem()]);
+      setBillDiscounts([]);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
   });
 
-  const set = (k: keyof Form) => (v: string) =>
+  const { data: merchantTypes = [] } = useMerchantTypes();
+  const set = (k: keyof Form) => (v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
+    // เปลี่ยนประเภทร้าน -> ตั้งหมวดของทุกรายการเป็นหมวดเริ่มต้นของร้านนั้น (ตามสเปก)
+    if (k === "merchant_type") {
+      setItems((xs) => applyMerchantDefault(xs, merchantTypes.find((t) => t.id === v)));
+    }
+  };
+  /** ใบประกันภัยไม่มีรายการสินค้า — ซ่อนช่องรายการ (ข้อมูลกรมธรรม์อยู่ในฟอร์มด้านบนแทน) */
+  const noItems = merchantTypes.find((t) => t.id === form.merchant_type)?.no_items ?? false;
 
   function reset() {
     setForm(blank());
     setItems([emptyItem()]);
+    setBillDiscounts([]);
     setSaved(null);
     save.reset();
   }
@@ -114,7 +127,13 @@ export default function ManualPage() {
 
       <TransactionFields form={form} onChange={set} />
 
-      <ItemsEditor items={items} setItems={setItems} />
+      {!noItems && <ItemsEditor
+          items={items}
+          setItems={setItems}
+          totals={form}
+          billDiscounts={billDiscounts}
+          setBillDiscounts={setBillDiscounts}
+        />}
 
       {save.isError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">

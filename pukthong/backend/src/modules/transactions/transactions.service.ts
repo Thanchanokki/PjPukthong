@@ -8,9 +8,11 @@ import { randomUUID } from "node:crypto";
 import { receipts, transactions } from "../../db/client.js";
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
-import { matchMerchantType } from "../../shared/merchant-types.js";
+import { matchPolicyType } from "../../shared/insurance.js";
+import { matchMerchantType, merchantTypeOf } from "../../shared/merchant-types.js";
 import { Decimal, dec, moneyOut, quantize, sum } from "../../shared/money.js";
 import { type CategoryBook, loadBook } from "../categories/categories.service.js";
+import { normalizeItemPrice } from "../receipts/receipts.schema.js";
 import type { TransactionCreate } from "./transactions.schema.js";
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -47,6 +49,50 @@ function resolveCategory(
 }
 
 /** ฟิลด์ที่ผู้ใช้แก้ได้ — ใช้ร่วมกันทั้งตอน insert และ update */
+/**
+ * หมวดเริ่มต้นของร้านประเภทนี้ ถ้าผู้ใช้คนนี้ยังใช้หมวดนั้นได้ — null = ร้านขายของปนกัน
+ * ใช้เติมหมวดของรายการที่ยังไม่ได้เลือก (และของทั้งใบเมื่อไม่มีรายการ เช่น ใบประกันภัย)
+ */
+function defaultCategoryOf(payload: TransactionCreate, book: CategoryBook): string | null {
+  const type = matchMerchantType(payload.merchant_type);
+  const id = type ? merchantTypeOf(type).defaultCategory : null;
+  return id && book.isSelectable(id) ? id : null;
+}
+
+function insuranceDoc(payload: TransactionCreate) {
+  const i = payload.insurance;
+  if (!i || matchMerchantType(payload.merchant_type) !== "insurance") return null;
+  return {
+    insurer: i.insurer,
+    policyNumber: i.policy_number,
+    policyType: matchPolicyType(i.policy_type),
+    insuredName: i.insured_name,
+    coverageStart: i.coverage_start,
+    coverageEnd: i.coverage_end,
+    premium: quantize(i.premium),
+  };
+}
+
+/**
+ * ส่วนลดท้ายบิล: ถ้า client ส่งแยกก้อนมา ตัวเลข discount ของใบ = ผลรวมของก้อน (กันสองค่าไม่ตรงกัน)
+ * client รุ่นเก่าที่ส่งแค่ตัวเลขก้อนเดียว ยังบันทึกได้เหมือนเดิม
+ */
+function billDiscountFields(payload: TransactionCreate) {
+  if (!payload.bill_discounts) return { discount: quantize(payload.discount) };
+  const billDiscounts = payload.bill_discounts
+    .map((b) => ({
+      label: b.label,
+      kind: b.kind,
+      amount: quantize(dec(b.amount)?.abs().toFixed(2) ?? null),
+      pointsUsed: quantize(b.points_used, 0),
+    }))
+    .filter((b) => b.amount !== null);
+  return {
+    billDiscounts,
+    discount: billDiscounts.length ? sum(billDiscounts.map((b) => b.amount)).toFixed(2) : null,
+  };
+}
+
 function toFields(payload: TransactionCreate, book: CategoryBook) {
   return {
     // ระบบรายรับถูกตัดออก — ทุกอย่างที่บันทึกผ่าน API นี้คือรายจ่าย
@@ -61,28 +107,36 @@ function toFields(payload: TransactionCreate, book: CategoryBook) {
     purchasedTime: payload.purchased_time,
     currency: payload.currency,
     subtotal: quantize(payload.subtotal),
-    discount: quantize(payload.discount),
+    ...billDiscountFields(payload),
     serviceCharge: quantize(payload.service_charge),
     vatRate: quantize(payload.vat_rate),
     vatAmount: quantize(payload.vat_amount),
     total: quantize(payload.total) as string,
-    categoryId: resolveCategory(book, payload),
+    categoryId: resolveCategory(book, payload) ?? defaultCategoryOf(payload, book),
+    insurance: insuranceDoc(payload),
     paymentMethod: payload.payment_method,
     paymentChannel: payload.payment_channel,
     note: payload.note,
   };
 }
 
+/** ใบประเภทที่ไม่มีรายการสินค้า (ประกันภัย) ไม่เก็บรายการเลย — ทั้งใบนับเข้าหมวดเริ่มต้นของร้าน */
 const itemDocs = (payload: TransactionCreate, book: CategoryBook): TransactionItemDoc[] =>
-  payload.items.map((item, i) => ({
+  (merchantTypeOf(matchMerchantType(payload.merchant_type)).noItems ? [] : payload.items).map((item, i) => ({
     lineNo: item.line_no ?? i + 1,
     name: item.name,
     // จำนวนใบเสร็จมีทศนิยมได้ถึง 3 ตำแหน่ง (เช่น ชั่งกิโล 0.375)
     qty: quantize(item.qty, 3),
     unitPrice: quantize(item.unit_price),
-    amount: quantize(item.amount),
+    // ราคาสุทธิคำนวณจากราคาเต็ม − ส่วนลดเสมอเมื่อมีราคาเต็ม — กันตัวเลขสามช่องไม่ตรงกัน
+    ...(({ gross_amount, discount, amount, discount_label }) => ({
+      grossAmount: quantize(gross_amount),
+      discount: quantize(discount),
+      discountLabel: discount ? discount_label : null,
+      amount: quantize(amount),
+    }))(normalizeItemPrice(item)),
     flag: item.flag,
-    categoryId: resolveCategory(book, item),
+    categoryId: resolveCategory(book, item) ?? defaultCategoryOf(payload, book),
   }));
 
 /** บันทึกรายการที่ผู้ใช้ตรวจและยืนยันแล้ว — ไม่มีทางถูกเรียกอัตโนมัติ */

@@ -46,6 +46,7 @@ export default function SettingsPage() {
         <h2 className="mb-2 text-sm font-medium text-ink/60">จัดการ</h2>
         <ul className="divide-y divide-kraft overflow-hidden rounded-xl border border-kraft bg-white">
           <SettingsRow label="หมวดหมู่" hint="จัดการหมวดรายจ่าย" onClick={() => navigate("/categories")} />
+          <SettingsRow label="ลดหย่อนภาษี" hint="สรุปเบี้ยประกันรายปี" onClick={() => navigate("/tax")} />
           <SettingsRow label="สกุลเงิน" hint={user?.currency ?? "THB"} disabled />
         </ul>
       </section>

@@ -55,6 +55,13 @@ export type LineItem = {
   qty: string | null;
   name: string | null;
   unit_price: string | null;
+  /** ราคาก่อนส่วนลด — null = ไม่มีส่วนลด (ราคาเต็ม = amount) */
+  gross_amount?: string | null;
+  /** ส่วนลดของสินค้านี้ (บวก) */
+  discount?: string | null;
+  /** ข้อความของส่วนลดตามที่พิมพ์ เช่น "HairJew 20.57%" */
+  discount_label?: string | null;
+  /** ราคาสุทธิหลังหักส่วนลด — ค่านี้ใช้รวมยอดรายหมวดและงบ */
   amount: string | null;
   flag: string | null;
   /** id ของหมวดที่ AI เดาให้ตอนสแกน — เป็นค่าตั้งต้นของ category_id */
@@ -81,7 +88,49 @@ export type Category = {
 };
 
 /** ประเภทร้าน — ชุดตายตัวของระบบ ใช้แยกใบเสร็จทั้งใบตามร้าน (คนละแกนกับหมวดสินค้า) */
-export type MerchantType = { id: string; name: string; icon: string };
+export type MerchantType = {
+  id: string;
+  name: string;
+  icon: string;
+  /** หมวดเริ่มต้นของทุกรายการในร้านประเภทนี้ — null = ร้านขายของปนกัน จัดรายชิ้น */
+  default_category_id: string | null;
+  /** ใบประเภทนี้ไม่มีรายการสินค้า (ประกันภัย) — ฟอร์มแสดงช่องกรอกกรมธรรม์แทน */
+  no_items: boolean;
+};
+
+/** ข้อมูลกรมธรรม์จากใบเสร็จค่าเบี้ยประกัน */
+export type Insurance = {
+  insurer: string | null;
+  policy_number: string | null;
+  /** life | health | health_parents | annuity | non_life | other */
+  policy_type: string | null;
+  policy_type_name?: string | null;
+  insured_name: string | null;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  premium: string | null;
+};
+
+export type InsuranceSummary = {
+  year: number;
+  by_type: {
+    policy_type: string;
+    name: string;
+    premium_paid: string;
+    /** เพดานลดหย่อนต่อปี — null = ไม่ใช้สิทธิลดหย่อน */
+    cap: number | null;
+    deductible: string;
+    note: string;
+  }[];
+  total_premium: string;
+  total_deductible: string;
+  policies: (Insurance & { transaction_id: string; paid_at: string; premium: string })[];
+  disclaimer: string;
+};
+
+export async function fetchInsuranceSummary(year: number): Promise<InsuranceSummary> {
+  return handle(await fetch(`${API_BASE}/api/tax/insurance?year=${year}`, { headers: authHeaders() }));
+}
 
 export async function fetchMerchantTypes(): Promise<MerchantType[]> {
   return handle(await fetch(`${API_BASE}/api/merchant-types`, { headers: authHeaders() }));
@@ -95,11 +144,24 @@ export type CategoryInput = {
   is_active?: boolean;
 };
 
+/** ส่วนลดท้ายบิลหนึ่งก้อน — ไม่ได้ผูกกับสินค้าชิ้นใด */
+export type BillDiscount = {
+  label: string | null;
+  /** discount = ส่วนลดทั่วไป | member = สมาชิก | coupon = คูปอง | points = ใช้คะแนนแลก */
+  kind: "discount" | "member" | "coupon" | "points";
+  /** จำนวนเงินที่ลด (บวก) */
+  amount: string | null;
+  /** คะแนนที่ใช้แลก — เฉพาะ kind = points */
+  points_used: string | null;
+};
+
 export type ReceiptDraft = {
   document_type: string | null;
   merchant_name: string | null;
   /** id ประเภทร้านที่ AI เดา — null = ตอบนอกรายการ */
   merchant_type: string | null;
+  /** ข้อมูลกรมธรรม์ — มีเฉพาะใบประกันภัย */
+  insurance?: Insurance | null;
   branch: string | null;
   merchant_tax_id: string | null;
   doc_number: string | null;
@@ -111,6 +173,8 @@ export type ReceiptDraft = {
   item_count_printed: number | null;
   subtotal: string | null;
   discount: string | null;
+  /** ส่วนลดท้ายบิลแยกก้อน (ส่วนลด / สมาชิก / คูปอง / ใช้คะแนน) */
+  bill_discounts?: BillDiscount[];
   service_charge: string | null;
   vat_rate: string | null;
   vat_amount: string | null;
@@ -187,12 +251,16 @@ export type Transaction = {
   currency: string;
   subtotal: string | null;
   discount: string | null;
+  /** ส่วนลดท้ายบิลแยกก้อน (ส่วนลด / สมาชิก / คูปอง / ใช้คะแนน) */
+  bill_discounts?: BillDiscount[];
   service_charge: string | null;
   vat_rate: string | null;
   vat_amount: string | null;
   total: string;
   /** id ประเภทร้าน — null = ยังไม่ได้จัด (นับเป็น "ร้านอื่นๆ") */
   merchant_type: string | null;
+  /** ข้อมูลกรมธรรม์ — มีเฉพาะใบประกันภัย */
+  insurance?: Insurance | null;
   merchant_type_name: string;
   category_id: string | null;
   /** ชื่อหมวด — backend เปิดหาจาก category_id ให้ */
