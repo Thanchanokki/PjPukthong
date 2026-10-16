@@ -1,16 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { type Monthly, type Transaction, baht, fetchMonthly } from "../api";
+import { type Monthly, type ScanStats, type Transaction, baht, fetchMonthly, fetchScanStats } from "../api";
 import { useAuth } from "../auth";
 import { type BudgetLine, fetchBudget } from "../budget";
 import {
   CalendarIcon,
   ChevronDownIcon,
-  DoorIcon,
   GearIcon,
   PersonIcon,
   PlusIcon,
+  ReceiptIcon,
 } from "../components/icons";
 
 /**
@@ -81,7 +81,7 @@ function daysLeftIn(month: string): number {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
 
@@ -96,10 +96,10 @@ export default function HomePage() {
     queryKey: ["monthly", prevMonth, "purchased"],
     queryFn: () => fetchMonthly(prevMonth, "purchased"),
   });
+  const scanStats = useQuery({ queryKey: ["scan-stats"], queryFn: fetchScanStats });
   const budget = useQuery({
-    // ใช้แกนเดียวกับค่าเริ่มต้นของหน้างบ (ตามประเภทร้าน) การ์ดนี้กับหน้างบจะได้ตรงกัน
-    queryKey: ["budget", month, "merchant"],
-    queryFn: () => fetchBudget(month, "merchant"),
+    queryKey: ["budget", month],
+    queryFn: () => fetchBudget(month),
   });
 
   const expense = Number(monthly.data?.expense_total ?? 0);
@@ -127,7 +127,11 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
-      <HomeHeader name={user?.name ?? "ผู้ใช้"} onLogout={logout} />
+      <HomeHeader
+        name={user?.name ?? "ผู้ใช้"}
+        avatarUrl={user?.avatar_url}
+        onSettings={() => navigate("/settings")}
+      />
 
       <MonthField month={month} onChange={(m) => setParams({ month: m })} />
 
@@ -138,6 +142,8 @@ export default function HomePage() {
         changePct={changePct}
         topCategory={topCategory}
       />
+
+      <ScanCountCard stats={scanStats.data} onScan={() => navigate("/add")} />
 
       {nearLimit.length > 0 && (
         <BudgetWarning lines={nearLimit} onOpen={() => navigate(`/budget?month=${month}`)} />
@@ -175,34 +181,72 @@ export default function HomePage() {
   );
 }
 
+// ---------------------------------------------------------------- จำนวนใบเสร็จ
+
+/** จำนวนใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ — ทั้งหมด และเดือนนี้ (นับตามวันที่สแกน) */
+function ScanCountCard({ stats, onScan }: { stats: ScanStats | undefined; onScan: () => void }) {
+  return (
+    <section className="flex items-center gap-4 rounded-xl border border-kraft bg-white p-4">
+      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-mist text-pine">
+        <ReceiptIcon className="h-6 w-6" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-ink/55">ใบเสร็จที่สแกนแล้ว</p>
+        <p className="text-2xl font-bold tabular-nums">
+          {stats ? stats.scanned_total.toLocaleString("th-TH") : "—"}
+          <span className="ml-1 text-sm font-normal text-ink/55">ใบ</span>
+        </p>
+        <p className="text-xs text-ink/55">
+          เดือนนี้ {stats ? stats.scanned_this_month.toLocaleString("th-TH") : "—"} ใบ
+        </p>
+      </div>
+      <button type="button" onClick={onScan} className="btn shrink-0 bg-pine text-white hover:bg-pine-dark">
+        สแกนเพิ่ม
+      </button>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------- ส่วนบน
 
-function HomeHeader({ name, onLogout }: { name: string; onLogout: () => void }) {
+function HomeHeader({
+  name,
+  avatarUrl,
+  onSettings,
+}: {
+  name: string;
+  /** รูปโปรไฟล์ที่ตั้งไว้ในหน้าตั้งค่า — undefined/null = ยังไม่ได้ตั้ง ใช้ไอคอนคนแทน */
+  avatarUrl?: string | null;
+  onSettings: () => void;
+}) {
   return (
     <header className="flex items-center gap-3">
-      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
-        <PersonIcon className="h-6 w-6" />
-      </span>
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="h-12 w-12 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
+          <PersonIcon className="h-6 w-6" />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-xs text-ink/55">{greeting()}</p>
         <h1 className="truncate text-base font-bold">{name}</h1>
       </div>
 
-      {/* เฟือง (ยังไม่มีหน้าตั้งค่าโปรไฟล์จริง — ใส่ไว้ก่อนแบบกดไม่ได้) อยู่ข้างปุ่มออกจากระบบ */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <span className="grid h-8 w-8 place-items-center text-ink/35" aria-hidden>
-          <GearIcon className="h-4 w-4" />
-        </span>
-        <button
-          type="button"
-          onClick={onLogout}
-          aria-label="ออกจากระบบ"
-          title="ออกจากระบบ"
-          className="grid h-8 w-8 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
-        >
-          <DoorIcon className="h-5 w-5" />
-        </button>
-      </div>
+      {/* เฟืองพาไปหน้าตั้งค่า — ออกจากระบบย้ายไปอยู่ในนั้นแล้ว */}
+      <button
+        type="button"
+        onClick={onSettings}
+        aria-label="ตั้งค่า"
+        title="ตั้งค่า"
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
+      >
+        <GearIcon className="h-5 w-5" />
+      </button>
     </header>
   );
 }

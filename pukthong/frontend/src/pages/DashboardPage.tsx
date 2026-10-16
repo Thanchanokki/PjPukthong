@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { type Monthly, type Transaction, baht, fetchMonthly, fetchMonths, imageUrl } from "../api";
 import { FALLBACK } from "../categories";
+import { billDiscountText } from "../components/FormFields";
 
 /**
  * หน้าสรุปรายจ่าย — โดนัทสัดส่วนหมวด + รายการหมวด + ยอดรายวัน
@@ -166,6 +167,9 @@ type ItemRow = {
   merchant: string | null;
   date: string;
   amount: number;
+  /** ส่วนลดของรายการนี้ (บวก) */
+  discount: number | null;
+  discountLabel?: string | null;
   receiptId: string | null;
 };
 
@@ -191,6 +195,8 @@ function itemsIn(txs: Transaction[], category: string): ItemRow[] {
         merchant: tx.merchant_name,
         date: tx.purchased_at,
         amount,
+        discount: it.discount ? Number(it.discount) : null,
+        discountLabel: it.discount_label ?? null,
         receiptId: tx.receipt_id,
       });
     }
@@ -199,11 +205,17 @@ function itemsIn(txs: Transaction[], category: string): ItemRow[] {
     if (rest !== 0 && restCategory === category) {
       rows.push({
         key: `${tx.id}-rest`,
-        name: tx.items.length ? "ส่วนต่างท้ายบิล (VAT/ส่วนลด/ค่าบริการ)" : "ทั้งใบ (ไม่มีรายการย่อย)",
+        // ส่วนลดท้ายบิลมีชื่อให้ (เช่น ใช้คะแนน The 1) — บอกตรงๆ ว่ายอดติดลบมาจากอะไร
+        name: !tx.items.length
+          ? "ทั้งใบ (ไม่มีรายการย่อย)"
+          : tx.bill_discounts?.length
+            ? tx.bill_discounts.map(billDiscountText).join(" · ")
+            : "ส่วนต่างท้ายบิล (VAT/ส่วนลด/ค่าบริการ)",
         sub: null,
         merchant: tx.merchant_name,
         date: tx.purchased_at,
         amount: rest,
+        discount: null,
         receiptId: tx.receipt_id,
       });
     }
@@ -225,6 +237,11 @@ function CategoryItems({ txs, category }: { txs: Transaction[]; category: string
               {r.name}
               {r.sub && <span className="ml-1.5 text-ink/40">· {r.sub}</span>}
             </p>
+            {r.discount ? (
+              <p className="text-red-700/80">
+                🏷️ ส่วนลด{r.discountLabel ? ` ${r.discountLabel}` : ""} −{baht(r.discount)} (ราคาเต็ม {baht(r.amount + r.discount)})
+              </p>
+            ) : null}
             <p className="truncate text-ink/40">
               {thaiDate(r.date)}
               {r.merchant && ` · ${r.merchant}`}

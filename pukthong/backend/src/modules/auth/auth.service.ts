@@ -9,8 +9,9 @@ import { randomUUID } from "node:crypto";
 import { users } from "../../db/client.js";
 import type { UserDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
-import type { LoginInput, RegisterInput } from "./auth.schema.js";
+import type { LoginInput, RegisterInput, UpdateProfileInput } from "./auth.schema.js";
 import { hashPassword, signToken, verifyPassword } from "./auth.security.js";
+import { loadAvatar, saveAvatar } from "./avatar.storage.js";
 
 /** MongoDB คืนรหัสนี้เมื่อค่าชน unique index */
 const DUPLICATE_KEY = 11000;
@@ -72,4 +73,57 @@ export async function getById(userId: string): Promise<UserDoc> {
   // token ยังไม่หมดอายุ แต่บัญชีถูกลบไปแล้ว
   if (!user) throw httpError(401, "ไม่พบบัญชีผู้ใช้นี้");
   return user;
+}
+
+/** แก้ชื่อ/อีเมลของตัวเอง — คืน document หลังแก้ เพื่อให้ตอบค่าใหม่กลับไปได้ทันที */
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+): Promise<UserDoc> {
+  const changes: Partial<UserDoc> = {};
+  if (input.name !== undefined) changes.name = input.name;
+  if (input.email !== undefined) {
+    // อีเมลเดิมของตัวเองไม่นับว่าซ้ำ — ฟอร์มส่งอีเมลมาทุกครั้งแม้ไม่ได้แก้
+    if (await users.findOne({ email: input.email, _id: { $ne: userId } })) {
+      throw httpError(409, "อีเมลนี้ถูกใช้แล้ว");
+    }
+    changes.email = input.email;
+  }
+  if (Object.keys(changes).length === 0) return getById(userId);
+
+  try {
+    const updated = await users.findOneAndUpdate(
+      { _id: userId },
+      { $set: { ...changes, updatedAt: new Date() } },
+      { returnDocument: "after" },
+    );
+    if (!updated) throw httpError(401, "ไม่พบบัญชีผู้ใช้นี้");
+    return updated;
+  } catch (err) {
+    // มีคนเอาอีเมลนี้ไปตัดหน้าระหว่าง findOne ข้างบนกับตอนเขียน — unique index จับที่นี่
+    if ((err as { code?: number }).code === DUPLICATE_KEY) {
+      throw httpError(409, "อีเมลนี้ถูกใช้แล้ว", err);
+    }
+    throw err;
+  }
+}
+
+export async function setAvatar(userId: string, raw: Buffer): Promise<UserDoc> {
+  // เช็คบัญชีก่อนเขียนไฟล์ — token ของบัญชีที่ถูกลบไปแล้วไม่ควรทิ้งไฟล์ค้างไว้
+  await getById(userId);
+  const key = await saveAvatar(userId, raw);
+  const now = new Date();
+  const updated = await users.findOneAndUpdate(
+    { _id: userId },
+    { $set: { avatarKey: key, avatarUpdatedAt: now, updatedAt: now } },
+    { returnDocument: "after" },
+  );
+  if (!updated) throw httpError(401, "ไม่พบบัญชีผู้ใช้นี้");
+  return updated;
+}
+
+export async function readAvatar(userId: string): Promise<Buffer> {
+  const user = await getById(userId);
+  if (!user.avatarKey) throw httpError(404, "ยังไม่ได้ตั้งรูปโปรไฟล์");
+  return loadAvatar(user.avatarKey);
 }

@@ -11,11 +11,40 @@ const TOLERANCE = new Decimal(1); // คลาดเคลื่อนได้ 
 
 const or0 = (v: string | null): Decimal => dec(v) ?? ZERO;
 
+/**
+ * ส่วนลดท้ายบิลที่ถูกนับซ้ำกับส่วนลดรายสินค้า -> ทิ้ง
+ *
+ * ใบอย่าง H&M พิมพ์ส่วนลดใต้สินค้า แล้วพิมพ์ "Customer Discount" ท้ายใบเป็นยอดสรุปของส่วนลดเดิม
+ * AI มักใส่ทั้งสองที่ ตัดสินด้วยยอดรวมบนใบ (ตัวเลขที่เชื่อถือได้ที่สุด):
+ * ถ้าราคาสุทธิของรายการรวมกันเท่ายอดรวมพอดีอยู่แล้ว แต่หักส่วนลดท้ายบิลแล้วไม่เท่า = นับซ้ำ
+ * และส่วนลดท้ายบิลต้องไม่เกินผลรวมส่วนลดรายสินค้า (ไม่งั้นอาจเป็นส่วนลดจริงอีกก้อน)
+ */
+function dropDoubleCountedDiscount(d: ReceiptDraft) {
+  const bill = dec(d.discount);
+  const total = dec(d.total);
+  if (!bill || bill.isZero() || total === null || d.line_items.length === 0) return;
+  const amounts = d.line_items.map((i) => i.amount).filter((a) => a !== null);
+  const itemDisc = sum(d.line_items.map((i) => i.discount));
+  const base = sum(amounts)
+    .plus(or0(d.service_charge))
+    .plus(d.vat_included ? ZERO : or0(d.vat_amount));
+  const near = (a: Decimal, b: Decimal) => a.minus(b).abs().lte(TOLERANCE);
+  if (itemDisc.gte(bill.abs()) && near(base, total) && !near(base.minus(bill.abs()), total)) {
+    d.discount = null;
+    // ยอดรวมบนใบเท่าผลรวมราคาสุทธิอยู่แล้ว ส่วนลดท้ายบิลทุกก้อนจึงเป็นยอดสรุปของส่วนลดรายสินค้า
+    d.bill_discounts = [];
+    // subtotal ที่ AI คิดมาจากส่วนลดก้อนเดียวกันก็ผิดตาม — ล้างทิ้งให้ผู้ใช้เห็นค่าว่างดีกว่าค่าผิด
+    const sub = dec(d.subtotal);
+    if (sub !== null && near(sub.minus(bill.abs()), total)) d.subtotal = null;
+  }
+}
+
 /** ห่างกันเกินเท่านี้ถือว่าน่าสงสัย — ถ่ายใบเก่าเก็บตกยังปกติ แต่ข้ามปีมักคืออ่านปีผิด */
 const DATE_GAP_WARN_DAYS = 120;
 
 export function enrich(d: ReceiptDraft, uploadedAt: Date = new Date()): ReceiptDraft {
   const warnings = [...d.warnings];
+  dropDoubleCountedDiscount(d);
 
   /**
    * วันที่บนใบห่างจากวันที่สแกนมากผิดปกติ = สัญญาณว่า AI อ่านปีผิด
@@ -43,21 +72,37 @@ export function enrich(d: ReceiptDraft, uploadedAt: Date = new Date()): ReceiptD
   if (d.total === null) warnings.push("อ่านยอดรวมไม่ได้ กรุณากรอกเอง");
   if (d.issued_at === null) warnings.push("อ่านวันที่ไม่ได้ กรุณากรอกเอง");
 
-  // ผลรวมรายการควรเทียบกับยอดก่อน VAT ถ้ามี ไม่ใช่ยอดรวมสุทธิ
-  // (ไม่งั้นใบที่มีส่วนลด/ค่าบริการ/VAT แยก จะขึ้นเตือนผิดทุกใบ)
+  /**
+   * ผลรวมราคาสุทธิของรายการ (หลังหักส่วนลดรายชิ้นแล้ว) − ส่วนลดท้ายบิล + ค่าบริการ
+   * (+ VAT ถ้าแยกนอกราคา) ต้องเท่ายอดรวมบนใบ — ไม่ตรง = อ่านรายการหรือส่วนลดตกหล่น
+   */
   const amounts = d.line_items.map((i) => i.amount).filter((a) => a !== null);
-  if (amounts.length > 0) {
-    const s = sum(amounts);
-    const base = dec(d.subtotal) ?? dec(d.total);
-    if (base !== null && s.minus(base).abs().gt(TOLERANCE)) {
-      const label = d.subtotal !== null ? "ยอดก่อน VAT" : "ยอดรวม";
-      warnings.push(`ผลรวมรายการ ${s.toString()} ≠ ${label} ${base.toString()}`);
+  const total0 = dec(d.total);
+  if (amounts.length > 0 && total0 !== null) {
+    const net = sum(amounts);
+    const expected = net
+      .minus(or0(d.discount))
+      .plus(or0(d.service_charge))
+      .plus(d.vat_included ? ZERO : or0(d.vat_amount));
+    if (expected.minus(total0).abs().gt(TOLERANCE)) {
+      warnings.push(
+        `ผลรวมรายการหลังหักส่วนลด ${expected.toFixed(2)} ≠ ยอดรวม ${total0.toFixed(2)} — ตรวจรายการหรือส่วนลดที่อาจตกหล่น`,
+      );
     }
   }
 
+  // ราคาเต็ม − ส่วนลด ต้องเท่าราคาสุทธิในทุกรายการ (normalizeItemPrice คำนวณให้แล้ว
+  // จึงไม่ควรเกิด แต่กันไว้ถ้าส่วนลดมากกว่าราคาเต็ม = อ่านส่วนลดผิดบรรทัด)
+  const overDiscount = d.line_items.filter((i) => (dec(i.amount) ?? ZERO).isNegative() && dec(i.gross_amount) !== null);
+  if (overDiscount.length > 0) {
+    warnings.push(`ส่วนลดมากกว่าราคาสินค้า: ${overDiscount.map((i) => i.name ?? "(ไม่มีชื่อ)").join(", ")}`);
+  }
+
+  // ใบที่มีรายการสินค้าตรวจจากผลรวมรายการด้านบนแล้ว — ตรวจจาก subtotal เฉพาะใบที่ไม่มีรายการ
+  // (subtotal มักไม่ได้พิมพ์บนใบ AI ต้องเดาความหมายเอง ถ้าตรวจซ้ำจะเตือนผิดบ่อย)
   const subtotal = dec(d.subtotal);
   const total = dec(d.total);
-  if (subtotal !== null && total !== null) {
+  if (amounts.length === 0 && subtotal !== null && total !== null) {
     const calc = subtotal
       .minus(or0(d.discount))
       .plus(or0(d.service_charge))

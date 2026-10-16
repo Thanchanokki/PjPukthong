@@ -178,7 +178,14 @@ export function scanConfidence(
           : "ไม่มีข้อความ OCR ให้สอบทาน",
     });
   } else {
-    const hit = withAmount.filter((i) => amountIsGrounded(i.amount, pool)).length;
+    // รายการที่มีส่วนลด: บนใบพิมพ์ราคาเต็มกับส่วนลด ไม่ได้พิมพ์ราคาสุทธิ (AI คำนวณเอง)
+    // จึงนับว่าพบเมื่อราคาเต็มและส่วนลดมีอยู่บนใบทั้งคู่
+    const grounded = (i: (typeof withAmount)[number]) =>
+      amountIsGrounded(i.amount, pool) ||
+      (i.gross_amount !== null &&
+        amountIsGrounded(i.gross_amount, pool) &&
+        (i.discount === null || amountIsGrounded(i.discount, pool)));
+    const hit = withAmount.filter(grounded).length;
     const ratio = hit / withAmount.length;
     checks.push({
       key: "items_grounded",
@@ -192,7 +199,8 @@ export function scanConfidence(
 
   // ── 3. เลขบนใบบวกกันแล้วลงตัวไหม (ตรวจได้ด้วยเลขคณิตล้วน ไม่ต้องเชื่อใคร)
   const itemsSum = sum(draft.line_items.map((i) => i.amount));
-  const base = dec(draft.subtotal) ?? itemsSum;
+  // มีรายการ = ใช้ผลรวมราคาสุทธิของรายการ (ตัวเลขจากใบจริง) ไม่มีรายการ = ใช้ subtotal
+  const base = itemsSum.isZero() ? (dec(draft.subtotal) ?? itemsSum) : itemsSum;
   const expected = base
     .minus(dec(draft.discount) ?? ZERO)
     .plus(dec(draft.service_charge) ?? ZERO)

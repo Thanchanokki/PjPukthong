@@ -6,10 +6,13 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { receipts } from "../../db/client.js";
+import { receipts, transactions } from "../../db/client.js";
 import type { ReceiptDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
+import { merchantTypeOf } from "../../shared/merchant-types.js";
+import { quantize } from "../../shared/money.js";
 import { loadBook } from "../categories/categories.service.js";
+import { type DuplicateInfo, findDuplicate } from "../transactions/duplicates.js";
 import * as ai from "./ai.provider.js";
 import { scanConfidence } from "./confidence.js";
 import * as quality from "./image.quality.js";
@@ -36,6 +39,23 @@ export interface UploadResult {
   ocrQuality: number | null;
   ocrLowQuality: boolean;
   hasOcr: boolean;
+  /** รูปนี้เคยอัปโหลดและบันทึกเป็นรายการแล้ว — frontend ห้ามสแกนซ้ำ */
+  savedAs: DuplicateInfo | null;
+}
+
+/**
+ * จำนวนใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ (ไม่นับใบที่อัปโหลดทิ้งไว้แต่ไม่ได้บันทึก)
+ * เดือนนี้นับตามเวลาที่สแกน (uploadedAt) เวลาไทย
+ */
+export async function scanStats(userId: string) {
+  const now = new Date(Date.now() + 7 * 3600_000); // เลื่อนเป็นเวลาไทยก่อนตัดต้นเดือน
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7 * 3600_000);
+  const [total, thisMonth, uploaded] = await Promise.all([
+    transactions.countDocuments({ userId, receiptId: { $ne: null } }),
+    transactions.countDocuments({ userId, receiptId: { $ne: null }, uploadedAt: { $gte: monthStart } }),
+    receipts.countDocuments({ userId }),
+  ]);
+  return { scanned_total: total, scanned_this_month: thisMonth, uploaded_total: uploaded };
 }
 
 /**
@@ -75,6 +95,7 @@ export async function createFromImage(
       ocrQuality: existing.ocrQuality ?? null,
       ocrLowQuality: ocr.isLowQuality(existing.ocrQuality ?? null),
       hasOcr: Boolean(existing.ocrText),
+      savedAs: await findDuplicate(userId, NO_FIELDS, { receiptId: existing._id }),
     };
   }
 
@@ -111,8 +132,18 @@ export async function createFromImage(
     ocrQuality: row.ocrQuality,
     ocrLowQuality: ocr.isLowQuality(ocrResult.quality),
     hasOcr: ocrResult.text !== null,
+    savedAs: null,
   };
 }
+
+const NO_FIELDS = {
+  docNumber: null,
+  merchantTaxId: null,
+  merchantName: null,
+  purchasedAt: null,
+  purchasedTime: null,
+  total: null,
+};
 
 /** เก็บทศนิยม 3 ตำแหน่งพอ — เป็นค่าคุณภาพ ไม่ใช่เงิน จึงเป็น number ได้ */
 const roundQuality = (v: number | null) =>
@@ -155,6 +186,7 @@ export async function extract(userId: string, receiptId: string) {
       ai_model: model,
       scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
       unsupported: null,
+      duplicate_of: null,
     };
   }
 
@@ -167,6 +199,23 @@ export async function extract(userId: string, receiptId: string) {
     item.category_guess =
       book.match(guess) ?? book.match(guess?.split(">").pop()) ?? null;
   }
+
+  /**
+   * หมวดเริ่มต้นตามประเภทร้าน (สเปกของโปรเจกต์)
+   * - ร้านที่มีหมวดเริ่มต้น (ร้านอาหาร = อาหาร, ร้านยา = สุขภาพและยา …) ทุกรายการได้หมวดนั้น
+   *   แทนที่ที่ AI เดารายชิ้น — ผู้ใช้แก้รายชิ้นได้ในหน้าตรวจ
+   * - ร้านขายของปนกัน (สะดวกซื้อ/ซูเปอร์/ทั่วไป) ใช้หมวดที่ AI จัดรายชิ้นตามเดิม
+   * - ใบประกันภัยไม่มีรายการสินค้า (เก็บข้อมูลกรมธรรม์แทน) — ล้างรายการที่ AI อาจอ่านติดมา
+   */
+  if (draft.merchant_type) {
+    const type = merchantTypeOf(draft.merchant_type);
+    if (type.noItems) {
+      draft.line_items = [];
+    } else if (type.defaultCategory && book.isSelectable(type.defaultCategory)) {
+      for (const item of draft.line_items) item.category_guess = type.defaultCategory;
+    }
+  }
+  if (draft.merchant_type !== "insurance") draft.insurance = null;
 
   await receipts.updateOne(
     { _id: receiptId },
@@ -193,6 +242,19 @@ export async function extract(userId: string, receiptId: string) {
     scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
     /** สลิปโอนเงิน / บิลเขียนมือ / ไม่ใช่ใบเสร็จ — frontend เด้งป๊อปอัพเตือน (null = ปกติ) */
     unsupported: unsupportedReason(draft),
+    /** ใบนี้เคยบันทึกแล้ว (รูปเดิม หรือถ่ายใบเดิมใหม่) — frontend เตือนและไม่ให้บันทึกซ้ำ */
+    duplicate_of: await findDuplicate(
+      userId,
+      {
+        docNumber: draft.doc_number,
+        merchantTaxId: draft.merchant_tax_id,
+        merchantName: draft.merchant_name,
+        purchasedAt: draft.issued_at,
+        purchasedTime: draft.issued_time,
+        total: quantize(draft.total),
+      },
+      { receiptId },
+    ),
   };
 }
 

@@ -8,6 +8,8 @@
     "migrate": "tsx --env-file-if-exists=.env src/scripts/migrate.ts",
     "migrate:categories": "tsx --env-file-if-exists=.env src/scripts/migrate-categories.ts",
     "migrate:merchant-types": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types.ts",
+    "migrate:merchant-types-v2": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types-v2.ts",
+    "migrate:merchant-types-v3": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types-v3.ts",
     "evaluate": "tsx --env-file-if-exists=.env src/scripts/evaluate-ocr.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -21,13 +23,16 @@
     "mongodb": "^6.12.0",
     "openai": "^4.77.0",
     "sharp": "^0.33.5",
+    "tsx": "^4.23.15",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.9"
   }
 }

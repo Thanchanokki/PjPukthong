@@ -47,6 +47,8 @@ function userIdFromToken(token: string): string {
 declare module "fastify" {
   interface FastifyRequest {
     userId: string;
+    /** token ดิบที่ใช้ยืนยันตัว — userOut() ต่อท้าย URL รูปโปรไฟล์ด้วยตัวนี้ */
+    authToken: string;
   }
 }
 
@@ -59,11 +61,13 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
   if (!header || !header.startsWith("Bearer ")) {
     throw httpError(401, "ไม่ได้เข้าสู่ระบบ");
   }
-  req.userId = userIdFromToken(header.slice("Bearer ".length).trim());
+  const token = header.slice("Bearer ".length).trim();
+  req.userId = userIdFromToken(token);
+  req.authToken = token;
 }
 
 /**
- * <img src> แนบ header เองไม่ได้ — route รูปใบเสร็จจึงยอมรับ token ผ่าน ?token= ด้วย
+ * <img src> แนบ header เองไม่ได้ — route รูปใบเสร็จและรูปโปรไฟล์จึงยอมรับ token ผ่าน ?token= ด้วย
  * ใช้เฉพาะ GET ที่อ่านอย่างเดียวเท่านั้น (token ใน URL ติดไปกับ log/history ของ browser)
  */
 export async function requireAuthAllowQueryToken(
@@ -73,6 +77,7 @@ export async function requireAuthAllowQueryToken(
   const fromQuery = (req.query as { token?: unknown } | undefined)?.token;
   if (!req.headers.authorization && typeof fromQuery === "string" && fromQuery) {
     req.userId = userIdFromToken(fromQuery);
+    req.authToken = fromQuery;
     return;
   }
   await requireAuth(req, reply);

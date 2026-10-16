@@ -40,6 +40,13 @@ export type AuthUser = {
   email: string;
   currency: string;
   role: string;
+  /**
+   * URL รูปโปรไฟล์ — null = ยังไม่ได้ตั้ง (หน้า Settings จะ fallback เป็นไอคอนคน)
+   *
+   * backend แนบ token ต่อท้าย URL ให้แล้ว (แบบเดียวกับ imageUrl() ด้านล่าง) เพราะ
+   * <img src> แนบ Authorization header เองไม่ได้ — ใส่ลง <img src> ตรงๆ ได้เลย
+   */
+  avatar_url: string | null;
 };
 
 export type AuthResult = { token: string; user: AuthUser };
@@ -48,6 +55,13 @@ export type LineItem = {
   qty: string | null;
   name: string | null;
   unit_price: string | null;
+  /** ราคาก่อนส่วนลด — null = ไม่มีส่วนลด (ราคาเต็ม = amount) */
+  gross_amount?: string | null;
+  /** ส่วนลดของสินค้านี้ (บวก) */
+  discount?: string | null;
+  /** ข้อความของส่วนลดตามที่พิมพ์ เช่น "HairJew 20.57%" */
+  discount_label?: string | null;
+  /** ราคาสุทธิหลังหักส่วนลด — ค่านี้ใช้รวมยอดรายหมวดและงบ */
   amount: string | null;
   flag: string | null;
   /** id ของหมวดที่ AI เดาให้ตอนสแกน — เป็นค่าตั้งต้นของ category_id */
@@ -74,7 +88,49 @@ export type Category = {
 };
 
 /** ประเภทร้าน — ชุดตายตัวของระบบ ใช้แยกใบเสร็จทั้งใบตามร้าน (คนละแกนกับหมวดสินค้า) */
-export type MerchantType = { id: string; name: string; icon: string };
+export type MerchantType = {
+  id: string;
+  name: string;
+  icon: string;
+  /** หมวดเริ่มต้นของทุกรายการในร้านประเภทนี้ — null = ร้านขายของปนกัน จัดรายชิ้น */
+  default_category_id: string | null;
+  /** ใบประเภทนี้ไม่มีรายการสินค้า (ประกันภัย) — ฟอร์มแสดงช่องกรอกกรมธรรม์แทน */
+  no_items: boolean;
+};
+
+/** ข้อมูลกรมธรรม์จากใบเสร็จค่าเบี้ยประกัน */
+export type Insurance = {
+  insurer: string | null;
+  policy_number: string | null;
+  /** life | health | health_parents | annuity | non_life | other */
+  policy_type: string | null;
+  policy_type_name?: string | null;
+  insured_name: string | null;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  premium: string | null;
+};
+
+export type InsuranceSummary = {
+  year: number;
+  by_type: {
+    policy_type: string;
+    name: string;
+    premium_paid: string;
+    /** เพดานลดหย่อนต่อปี — null = ไม่ใช้สิทธิลดหย่อน */
+    cap: number | null;
+    deductible: string;
+    note: string;
+  }[];
+  total_premium: string;
+  total_deductible: string;
+  policies: (Insurance & { transaction_id: string; paid_at: string; premium: string })[];
+  disclaimer: string;
+};
+
+export async function fetchInsuranceSummary(year: number): Promise<InsuranceSummary> {
+  return handle(await fetch(`${API_BASE}/api/tax/insurance?year=${year}`, { headers: authHeaders() }));
+}
 
 export async function fetchMerchantTypes(): Promise<MerchantType[]> {
   return handle(await fetch(`${API_BASE}/api/merchant-types`, { headers: authHeaders() }));
@@ -88,11 +144,24 @@ export type CategoryInput = {
   is_active?: boolean;
 };
 
+/** ส่วนลดท้ายบิลหนึ่งก้อน — ไม่ได้ผูกกับสินค้าชิ้นใด */
+export type BillDiscount = {
+  label: string | null;
+  /** discount = ส่วนลดทั่วไป | member = สมาชิก | coupon = คูปอง | points = ใช้คะแนนแลก */
+  kind: "discount" | "member" | "coupon" | "points";
+  /** จำนวนเงินที่ลด (บวก) */
+  amount: string | null;
+  /** คะแนนที่ใช้แลก — เฉพาะ kind = points */
+  points_used: string | null;
+};
+
 export type ReceiptDraft = {
   document_type: string | null;
   merchant_name: string | null;
   /** id ประเภทร้านที่ AI เดา — null = ตอบนอกรายการ */
   merchant_type: string | null;
+  /** ข้อมูลกรมธรรม์ — มีเฉพาะใบประกันภัย */
+  insurance?: Insurance | null;
   branch: string | null;
   merchant_tax_id: string | null;
   doc_number: string | null;
@@ -104,6 +173,8 @@ export type ReceiptDraft = {
   item_count_printed: number | null;
   subtotal: string | null;
   discount: string | null;
+  /** ส่วนลดท้ายบิลแยกก้อน (ส่วนลด / สมาชิก / คูปอง / ใช้คะแนน) */
+  bill_discounts?: BillDiscount[];
   service_charge: string | null;
   vat_rate: string | null;
   vat_amount: string | null;
@@ -117,6 +188,28 @@ export type ReceiptDraft = {
   raw_text: string | null;
 };
 
+/** รายการที่บันทึกไว้แล้วซึ่งตรงกับใบนี้ — ใช้กันสแกนใบเสร็จซ้ำ */
+export type DuplicateInfo = {
+  transaction_id: string;
+  merchant_name: string | null;
+  purchased_at: string;
+  total: string;
+  /** เหตุผลที่ถือว่าซ้ำ */
+  reason: string;
+};
+
+export type ScanStats = {
+  /** ใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ */
+  scanned_total: number;
+  scanned_this_month: number;
+  /** ใบที่อัปโหลดทั้งหมด (รวมที่ยังไม่ได้บันทึก) */
+  uploaded_total: number;
+};
+
+export async function fetchScanStats(): Promise<ScanStats> {
+  return handle(await fetch(`${API_BASE}/api/receipts/stats`, { headers: authHeaders() }));
+}
+
 export type UploadResult = {
   receipt_id: string;
   duplicate: boolean;
@@ -128,6 +221,8 @@ export type UploadResult = {
   ocr_quality: number | null;
   ocr_low_quality: boolean;
   image_url: string;
+  /** รูปนี้เคยสแกนและบันทึกแล้ว — ห้ามสแกนซ้ำ */
+  saved_as: DuplicateInfo | null;
 };
 
 export type ScanCheck = {
@@ -150,7 +245,7 @@ export type ScanConfidence = {
 
 /** เอกสารที่ระบบไม่รองรับ — backend ตัดสินจากผลที่ AI อ่าน (ดู receipts.support.ts) */
 export type Unsupported = {
-  kind: "transfer_slip" | "handwritten" | "not_receipt";
+  kind: "transfer_slip" | "handwritten" | "not_receipt" | "no_items";
   title: string;
   message: string;
 };
@@ -163,6 +258,8 @@ export type ExtractResult = {
   scan_confidence: ScanConfidence;
   /** null = เอกสารปกติ */
   unsupported: Unsupported | null;
+  /** ใบนี้เคยบันทึกแล้ว (รูปเดิม หรือถ่ายใบเดิมใหม่) — ห้ามบันทึกซ้ำ */
+  duplicate_of: DuplicateInfo | null;
 };
 
 export type Transaction = {
@@ -180,12 +277,16 @@ export type Transaction = {
   currency: string;
   subtotal: string | null;
   discount: string | null;
+  /** ส่วนลดท้ายบิลแยกก้อน (ส่วนลด / สมาชิก / คูปอง / ใช้คะแนน) */
+  bill_discounts?: BillDiscount[];
   service_charge: string | null;
   vat_rate: string | null;
   vat_amount: string | null;
   total: string;
   /** id ประเภทร้าน — null = ยังไม่ได้จัด (นับเป็น "ร้านอื่นๆ") */
   merchant_type: string | null;
+  /** ข้อมูลกรมธรรม์ — มีเฉพาะใบประกันภัย */
+  insurance?: Insurance | null;
   merchant_type_name: string;
   category_id: string | null;
   /** ชื่อหมวด — backend เปิดหาจาก category_id ให้ */
@@ -402,6 +503,46 @@ export async function loginAccount(
 /** เรียกตอนเปิดแอปเพื่อดูว่า token ที่เก็บไว้ยังใช้ได้ไหม */
 export async function fetchMe(): Promise<AuthUser> {
   return handle(await fetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() }));
+}
+
+/**
+ * แก้ชื่อ/อีเมลของตัวเอง:
+ *
+ *   PATCH /api/auth/me
+ *   body:   { "name"?: string, "email"?: string }
+ *   200:    AuthUser ตัวเต็ม (เหมือนที่ /api/auth/me ตอบ) ค่าที่แก้แล้วสะท้อนกลับมาด้วย
+ *   409:    อีเมลซ้ำกับคนอื่น — 400: ฟอร์แมตไม่ถูก (ทั้งคู่ตอบ { "detail": "ข้อความ" })
+ */
+export async function updateProfile(input: {
+  name?: string;
+  email?: string;
+}): Promise<AuthUser> {
+  return handle(
+    await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PATCH",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/**
+ * อัปโหลด/เปลี่ยนรูปโปรไฟล์ (เขียนทับรูปเดิม):
+ *
+ *   POST /api/auth/me/avatar   (multipart/form-data, field ชื่อ "file")
+ *   200:  AuthUser ตัวเต็ม พร้อม avatar_url ที่อัปเดตแล้ว
+ *   400/413/415: ไม่ใช่รูปจริง / ใหญ่เกิน MAX_UPLOAD_MB / ชนิดไฟล์ไม่รองรับ
+ */
+export async function uploadAvatar(file: File): Promise<AuthUser> {
+  const form = new FormData();
+  form.append("file", file);
+  return handle(
+    await fetch(`${API_BASE}/api/auth/me/avatar`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    }),
+  );
 }
 
 export const baht = (v: string | number | null | undefined) =>

@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
+import ScanPage from "./pages/ScanPage";
 import CategoriesPage from "./pages/CategoriesPage";
 import DashboardPage from "./pages/DashboardPage";
 import HomePage from "./pages/HomePage";
@@ -12,6 +13,8 @@ import ManualPage from "./pages/ManualPage";
 import MonthlyPage from "./pages/MonthlyPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReviewPage from "./pages/ReviewPage";
+import SettingsPage from "./pages/SettingsPage";
+import TaxPage from "./pages/TaxPage";
 
 
 
@@ -37,26 +40,33 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function Shell() {
+  // flow สแกน (ถ่าย/ครอบ/ตรวจสอบ) ใช้ด้านล่างจอสำหรับปุ่มถ่ายและแถบยอดสุทธิ — ซ่อนเมนูล่าง
+  const { pathname } = useLocation();
+  const inScanFlow = pathname.startsWith("/add/scan") || pathname.startsWith("/review/");
   return (
     <div className="min-h-screen">
-
+      {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่ในหน้าตั้งค่า (เปิดจากไอคอนเฟืองที่
+          หน้าหลัก) เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/สรุป/รายการ) อยู่ที่ bottom nav */}
 
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-6">
+      <main className={`mx-auto max-w-6xl px-4 pt-6 ${inScanFlow ? "pb-10" : "pb-24"}`}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/add" element={<CapturePage />} />
+          <Route path="/add/scan" element={<ScanPage />} />
           <Route path="/review/:receiptId" element={<ReviewPage />} />
           <Route path="/manual" element={<ManualPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monthly" element={<MonthlyPage />} />
            <Route path="/budget" element={<BudgetPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/tax" element={<TaxPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      <BottomNav />
+      {!inScanFlow && <BottomNav />}
     </div>
   );
 }

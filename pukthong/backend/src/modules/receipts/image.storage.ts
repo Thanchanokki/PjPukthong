@@ -13,15 +13,6 @@ import sharp from "sharp";
 
 import { settings } from "../../config/index.js";
 
-export const ALLOWED_MIME = new Set([
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
-
 /** ข้อความภาษาไทยที่ส่งกลับให้ผู้ใช้อ่านได้ตรงๆ */
 export class ImageError extends Error {}
 

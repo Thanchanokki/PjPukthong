@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { normalizeKind } from "../../shared/discounts.js";
 import { toDecimalString } from "../../shared/money.js";
 import {
   currencyField,
@@ -40,6 +41,9 @@ export const transactionItemSchema = z.object({
   name: strField,
   qty: decField,
   unit_price: decField,
+  gross_amount: decField,
+  discount: decField,
+  discount_label: strField,
   amount: decField,
   flag: strField,
   ...categoryFields,
@@ -52,6 +56,35 @@ export const transactionCreateSchema = z.object({
   ),
   merchant_name: strField,
   merchant_type: strField,
+  /** ส่วนลดท้ายบิลแยกก้อน — ถ้าส่งมา discount ของใบจะถูกคำนวณจากผลรวมของก้อนเหล่านี้ */
+  bill_discounts: z.preprocess(
+    (v) => (Array.isArray(v) ? v : null),
+    z
+      .array(
+        z.object({
+          label: strField,
+          kind: z.preprocess(normalizeKind, z.enum(["discount", "member", "coupon", "points"])),
+          amount: decField,
+          points_used: decField,
+        }),
+      )
+      .nullable(),
+  ),
+  /** ข้อมูลกรมธรรม์ — ส่งเฉพาะใบประกันภัย */
+  insurance: z.preprocess(
+    (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null),
+    z
+      .object({
+        insurer: strField,
+        policy_number: strField,
+        policy_type: strField,
+        insured_name: strField,
+        coverage_start: z.preprocess(toDateString, z.string().nullable()),
+        coverage_end: z.preprocess(toDateString, z.string().nullable()),
+        premium: decField,
+      })
+      .nullable(),
+  ),
   branch: strField,
   merchant_tax_id: strField,
   doc_number: strField,

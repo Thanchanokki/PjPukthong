@@ -3,7 +3,7 @@
  *
  * แยกออกมาเพื่อให้มีนิยามฟิลด์ชุดเดียว — เพิ่มฟิลด์ทีเดียวได้ทั้งสองหน้า
  */
-import type { LineItem, ReceiptDraft } from "../api";
+import type { BillDiscount, LineItem, MerchantType, ReceiptDraft } from "../api";
 
 /**
  * ไม่มีหมวดระดับใบเสร็จแล้ว — หมวดอยู่ที่ "ของแต่ละชิ้น" ที่เดียว
@@ -29,6 +29,16 @@ export type Form = {
   payment_method: string;
   payment_channel: string;
   note: string;
+  /** VAT บนใบ: none = ไม่มี | included = รวมในราคาแล้ว | excluded = แยกบวกเพิ่ม (ใช้คิดยอดในหน้าตรวจ) */
+  vat_mode: "none" | "included" | "excluded";
+  // ข้อมูลกรมธรรม์ — ใช้เฉพาะเมื่อประเภทร้านเป็นประกันภัย
+  ins_insurer: string;
+  ins_policy_number: string;
+  ins_policy_type: string;
+  ins_insured_name: string;
+  ins_coverage_start: string;
+  ins_coverage_end: string;
+  ins_premium: string;
 };
 
 export const EMPTY: Form = {
@@ -48,6 +58,14 @@ export const EMPTY: Form = {
   payment_method: "",
   payment_channel: "",
   note: "",
+  vat_mode: "included",
+  ins_insurer: "",
+  ins_policy_number: "",
+  ins_policy_type: "",
+  ins_insured_name: "",
+  ins_coverage_start: "",
+  ins_coverage_end: "",
+  ins_premium: "",
 };
 
 const s = (v: string | null | undefined) => v ?? "";
@@ -71,7 +89,27 @@ export function draftToForm(d: ReceiptDraft): Form {
     total: s(d.total),
     payment_method: s(d.payment_method),
     payment_channel: s(d.payment_channel),
+    vat_mode: !d.vat_amount && !d.vat_rate ? "none" : d.vat_included === false ? "excluded" : "included",
+    ins_insurer: s(d.insurance?.insurer),
+    ins_policy_number: s(d.insurance?.policy_number),
+    ins_policy_type: s(d.insurance?.policy_type),
+    ins_insured_name: s(d.insurance?.insured_name),
+    ins_coverage_start: s(d.insurance?.coverage_start),
+    ins_coverage_end: s(d.insurance?.coverage_end),
+    // ไม่มีเบี้ยแยก ใช้ยอดรวมของใบ (ใบเสร็จค่าเบี้ยส่วนใหญ่มีแค่ยอดเดียว)
+    ins_premium: s(d.insurance?.premium ?? (d.merchant_type === "insurance" ? d.total : null)),
   };
+}
+
+/**
+ * เปลี่ยนประเภทร้านแล้วตั้งหมวดของทุกรายการเป็นหมวดเริ่มต้นของร้านนั้น (ตามสเปก)
+ * เช่น เปลี่ยนเป็นร้านอาหาร -> ทุกรายการเป็น "อาหาร" ผู้ใช้แก้รายชิ้นต่อได้
+ * ร้านขายของปนกัน (ไม่มีหมวดเริ่มต้น) คงหมวดเดิมของแต่ละรายการไว้
+ */
+export function applyMerchantDefault(items: LineItem[], type: MerchantType | undefined): LineItem[] {
+  const id = type?.default_category_id;
+  if (!id) return items;
+  return items.map((it) => ({ ...it, category_id: id }));
 }
 
 const num = (v: string) => (v.trim() === "" ? null : v.trim());
@@ -88,6 +126,8 @@ export const emptyItem = (): LineItem => ({
   qty: "",
   name: "",
   unit_price: null,
+  gross_amount: null,
+  discount: null,
   amount: null,
   flag: null,
   category_id: null,
@@ -102,7 +142,9 @@ export function buildPayload(
   form: Form,
   items: LineItem[],
   receiptId: string | null,
+  billDiscounts: BillDiscount[] = [],
 ) {
+  const isInsurance = form.merchant_type === "insurance";
   return {
     receipt_id: receiptId,
     merchant_name: num(form.merchant_name),
@@ -113,15 +155,30 @@ export function buildPayload(
     purchased_at: form.purchased_at,
     purchased_time: num(form.purchased_time),
     subtotal: num(form.subtotal),
-    discount: num(form.discount),
+    // ส่วนลดท้ายบิลส่งเป็นก้อน — backend รวมเป็น discount ของใบเอง
+    discount: null,
+    bill_discounts: billDiscounts,
     service_charge: num(form.service_charge),
-    vat_rate: num(form.vat_rate),
-    vat_amount: num(form.vat_amount),
+    // เลือก "ไม่มี VAT" = ไม่ส่งตัวเลข VAT ที่อาจค้างอยู่ในช่อง
+    vat_rate: form.vat_mode === "none" ? null : num(form.vat_rate),
+    vat_amount: form.vat_mode === "none" ? null : num(form.vat_amount),
     total: form.total,
     payment_method: num(form.payment_method),
     payment_channel: num(form.payment_channel),
     note: num(form.note),
-    items: items
+    // ใบประกันภัยไม่มีรายการสินค้า — ส่งข้อมูลกรมธรรม์แทน
+    insurance: isInsurance
+      ? {
+          insurer: num(form.ins_insurer),
+          policy_number: num(form.ins_policy_number),
+          policy_type: num(form.ins_policy_type),
+          insured_name: num(form.ins_insured_name),
+          coverage_start: num(form.ins_coverage_start),
+          coverage_end: num(form.ins_coverage_end),
+          premium: num(form.ins_premium),
+        }
+      : null,
+    items: isInsurance ? [] : items
       // บรรทัดที่ว่างทั้งชื่อและยอด ถือว่าผู้ใช้ไม่ได้ตั้งใจกรอก — ไม่ต้องส่ง
       .filter((it) => (it.name ?? "").trim() !== "" || (it.amount ?? "") !== "")
       .map((it, i) => ({
@@ -129,6 +186,8 @@ export function buildPayload(
         name: it.name,
         qty: it.qty,
         unit_price: it.unit_price,
+        gross_amount: it.gross_amount ?? null,
+        discount: it.discount ?? null,
         amount: it.amount,
         flag: it.flag,
         // AI เดาหมวดมาให้ตอนสแกน (category_guess) ผู้ใช้แก้ได้ที่ category_id
