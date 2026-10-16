@@ -188,6 +188,28 @@ export type ReceiptDraft = {
   raw_text: string | null;
 };
 
+/** รายการที่บันทึกไว้แล้วซึ่งตรงกับใบนี้ — ใช้กันสแกนใบเสร็จซ้ำ */
+export type DuplicateInfo = {
+  transaction_id: string;
+  merchant_name: string | null;
+  purchased_at: string;
+  total: string;
+  /** เหตุผลที่ถือว่าซ้ำ */
+  reason: string;
+};
+
+export type ScanStats = {
+  /** ใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ */
+  scanned_total: number;
+  scanned_this_month: number;
+  /** ใบที่อัปโหลดทั้งหมด (รวมที่ยังไม่ได้บันทึก) */
+  uploaded_total: number;
+};
+
+export async function fetchScanStats(): Promise<ScanStats> {
+  return handle(await fetch(`${API_BASE}/api/receipts/stats`, { headers: authHeaders() }));
+}
+
 export type UploadResult = {
   receipt_id: string;
   duplicate: boolean;
@@ -199,6 +221,8 @@ export type UploadResult = {
   ocr_quality: number | null;
   ocr_low_quality: boolean;
   image_url: string;
+  /** รูปนี้เคยสแกนและบันทึกแล้ว — ห้ามสแกนซ้ำ */
+  saved_as: DuplicateInfo | null;
 };
 
 export type ScanCheck = {
@@ -234,6 +258,8 @@ export type ExtractResult = {
   scan_confidence: ScanConfidence;
   /** null = เอกสารปกติ */
   unsupported: Unsupported | null;
+  /** ใบนี้เคยบันทึกแล้ว (รูปเดิม หรือถ่ายใบเดิมใหม่) — ห้ามบันทึกซ้ำ */
+  duplicate_of: DuplicateInfo | null;
 };
 
 export type Transaction = {

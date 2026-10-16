@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { type Monthly, type Transaction, baht, fetchMonthly } from "../api";
+import { type Monthly, type ScanStats, type Transaction, baht, fetchMonthly, fetchScanStats } from "../api";
 import { useAuth } from "../auth";
 import { type BudgetLine, fetchBudget } from "../budget";
 import {
@@ -10,6 +10,7 @@ import {
   GearIcon,
   PersonIcon,
   PlusIcon,
+  ReceiptIcon,
 } from "../components/icons";
 
 /**
@@ -95,6 +96,7 @@ export default function HomePage() {
     queryKey: ["monthly", prevMonth, "purchased"],
     queryFn: () => fetchMonthly(prevMonth, "purchased"),
   });
+  const scanStats = useQuery({ queryKey: ["scan-stats"], queryFn: fetchScanStats });
   const budget = useQuery({
     queryKey: ["budget", month],
     queryFn: () => fetchBudget(month),
@@ -141,6 +143,8 @@ export default function HomePage() {
         topCategory={topCategory}
       />
 
+      <ScanCountCard stats={scanStats.data} onScan={() => navigate("/add")} />
+
       {nearLimit.length > 0 && (
         <BudgetWarning lines={nearLimit} onOpen={() => navigate(`/budget?month=${month}`)} />
       )}
@@ -174,6 +178,32 @@ export default function HomePage() {
         <PlusIcon className="h-7 w-7" />
       </button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- จำนวนใบเสร็จ
+
+/** จำนวนใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ — ทั้งหมด และเดือนนี้ (นับตามวันที่สแกน) */
+function ScanCountCard({ stats, onScan }: { stats: ScanStats | undefined; onScan: () => void }) {
+  return (
+    <section className="flex items-center gap-4 rounded-xl border border-kraft bg-white p-4">
+      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-mist text-pine">
+        <ReceiptIcon className="h-6 w-6" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-ink/55">ใบเสร็จที่สแกนแล้ว</p>
+        <p className="text-2xl font-bold tabular-nums">
+          {stats ? stats.scanned_total.toLocaleString("th-TH") : "—"}
+          <span className="ml-1 text-sm font-normal text-ink/55">ใบ</span>
+        </p>
+        <p className="text-xs text-ink/55">
+          เดือนนี้ {stats ? stats.scanned_this_month.toLocaleString("th-TH") : "—"} ใบ
+        </p>
+      </div>
+      <button type="button" onClick={onScan} className="btn shrink-0 bg-pine text-white hover:bg-pine-dark">
+        สแกนเพิ่ม
+      </button>
+    </section>
   );
 }
 
