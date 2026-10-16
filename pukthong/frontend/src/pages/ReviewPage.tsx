@@ -114,10 +114,14 @@ export default function ReviewPage() {
   /** ใบประกันภัยไม่มีรายการสินค้า — ข้อมูลกรมธรรม์อยู่ในกล่องข้อมูลร้านค้าแทน */
   const noItems = merchantTypes.find((t) => t.id === form.merchant_type)?.no_items ?? false;
 
+  /** ใบที่สแกนต้องมีรายการสินค้าอย่างน้อย 1 รายการ (ยกเว้นใบประกันภัย) — backend ก็บังคับเหมือนกัน */
+  const missingItems = !noItems && !items.some((it) => money(it.amount) !== null);
   const totals = computeTotals(noItems ? [] : items, billDiscounts, form);
   const payable = totals.hasItems ? totals.payable : money(form.total);
   const conf = result?.scan_confidence;
-  const lowConf = conf?.level === "low" || conf?.level === "medium";
+  // ใบที่ระบบไม่รองรับ (ไม่มีรายการสินค้า สลิปโอน ฯลฯ) หรือใบซ้ำ ต้องไม่ขึ้นว่า "สำเร็จ"
+  const lowConf =
+    conf?.level === "low" || conf?.level === "medium" || Boolean(result?.unsupported || result?.duplicate_of);
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-28">
@@ -151,7 +155,10 @@ export default function ReviewPage() {
             </>
           ) : result ? (
             <>
-              <p className="font-bold">{lowConf ? "อ่านแล้ว ควรตรวจก่อนบันทึก" : "อ่านใบเสร็จสำเร็จ"}</p>
+              <p className="font-bold">
+                {result.unsupported?.title ??
+                  (result.duplicate_of ? "ใบเสร็จนี้เคยบันทึกแล้ว" : lowConf ? "อ่านแล้ว ควรตรวจก่อนบันทึก" : "อ่านใบเสร็จสำเร็จ")}
+              </p>
               <p className="text-sm text-white/75">
                 {conf?.score != null && <>เชื่อถือได้ {conf.score}% · </>}
                 {conf?.score != null && (
@@ -227,6 +234,13 @@ export default function ReviewPage() {
         </button>
       )}
 
+      {result && missingItems && (
+        <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          🧾 ต้องมีรายการสินค้าอย่างน้อย 1 รายการจึงจะบันทึกได้ — โปรดนำใบเสร็จที่มีรายการสินค้ามาสแกน
+          หรือกด "+ เพิ่ม" ในกล่องรายการสินค้า
+        </p>
+      )}
+
       {save.isError && (
         <div className="rounded-2xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           {(save.error as Error).message}
@@ -237,7 +251,7 @@ export default function ReviewPage() {
         amount={payable}
         onSave={() => save.mutate()}
         // ใบซ้ำบันทึกไม่ได้ (backend ก็ตอบ 409) — ถ้าผู้ใช้แก้ข้อมูลจนไม่ซ้ำแล้ว ให้กด "อ่านซ้ำ" ตรวจใหม่
-        disabled={!canSave(form) || !form.merchant_type || Boolean(result?.duplicate_of)}
+        disabled={!canSave(form) || !form.merchant_type || Boolean(result?.duplicate_of) || missingItems}
         pending={save.isPending}
       />
     </div>

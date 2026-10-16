@@ -11,7 +11,7 @@
  */
 import type { ReceiptDraft } from "./receipts.schema.js";
 
-export type UnsupportedKind = "transfer_slip" | "handwritten" | "not_receipt";
+export type UnsupportedKind = "transfer_slip" | "handwritten" | "not_receipt" | "no_items";
 
 export interface Unsupported {
   kind: UnsupportedKind;
@@ -47,6 +47,18 @@ export function unsupportedReason(d: ReceiptDraft): Unsupported | null {
       message:
         "ระบบอ่านลายมือได้ไม่แม่นยำ ตัวเลขที่อ่านได้อาจผิด " +
         "ตรวจทุกช่องให้ละเอียดก่อนบันทึก หรือกรอกรายการเองแทน",
+    };
+  }
+  // ระบบรองรับเฉพาะใบเสร็จที่มีรายการสินค้า (ใช้แยกหมวดรายชิ้น) — ยกเว้นใบประกันภัย
+  // ที่ไม่มีรายการสินค้าตามปกติ (เก็บข้อมูลกรมธรรม์แทน)
+  const hasItems = d.line_items.some((i) => i.amount !== null);
+  if (!hasItems && d.merchant_type !== "insurance") {
+    return {
+      kind: "no_items",
+      title: "ไม่พบรายการสินค้าในใบเสร็จนี้",
+      message:
+        "ระบบรองรับเฉพาะใบเสร็จที่มีรายการสินค้า โปรดนำใบเสร็จที่มีรายการสินค้ามาสแกน " +
+        "(สลิปรูดบัตรหรือใบที่มีแค่ยอดรวมใช้ไม่ได้) ถ้าบนใบมีรายการแต่ระบบอ่านไม่ออก กดเพิ่มรายการเองได้",
     };
   }
   return null;

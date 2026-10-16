@@ -164,6 +164,12 @@ export async function create(
   const fields = toFields(payload, book);
   const items = itemDocs(payload, book);
 
+  // ใบที่มาจากการสแกนต้องมีรายการสินค้า (ยกเว้นใบประกันภัย) — หน้ากรอกเองไม่บังคับ
+  // เพราะออกแบบไว้สำหรับกรณีไม่มีใบเสร็จ
+  if (payload.receipt_id && items.length === 0 && fields.merchantType !== "insurance") {
+    throw httpError(422, "ใบเสร็จนี้ไม่มีรายการสินค้า โปรดนำใบเสร็จที่มีรายการสินค้ามาสแกน หรือเพิ่มรายการก่อนบันทึก");
+  }
+
   // ห้ามบันทึกใบเสร็จซ้ำ — เช็คก่อนแตะสถานะใบเสร็จ
   const dup = await findDuplicate(userId, duplicateQuery(fields), { receiptId: payload.receipt_id });
   if (dup) throw httpError(409, duplicateMessage(dup));
