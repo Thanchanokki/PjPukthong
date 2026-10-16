@@ -41,8 +41,10 @@ export function AuthField({
 
 /**
  * checkbox ยอมรับข้อตกลง — ตอนนี้ validate ฝั่ง frontend อย่างเดียว (required บังคับติ๊ก
- * ก่อนส่งฟอร์มได้) ยังไม่มีการส่งค่านี้ไป backend และยังไม่มีหน้า /terms, /privacy จริง
- * จึงใส่ไว้เป็นข้อความเฉยๆ ก่อน ไม่ผูกลิงก์ กันไม่ให้กดแล้วเจอ 404
+ * ก่อนส่งฟอร์มได้) ยังไม่มีการส่งค่านี้ไป backend
+ *
+ * children ใส่ปุ่ม type="button" ได้ (เช่นคำที่เปิด TermsPrivacyModal) — คลิกปุ่มใน
+ * <label> ไม่ติ๊ก checkbox ให้
  */
 export function AuthCheckbox({
   checked,

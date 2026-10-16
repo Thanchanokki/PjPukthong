@@ -9,6 +9,7 @@ import {
   AuthShell,
   AuthSubmit,
 } from "../components/AuthShell";
+import { TermsPrivacyModal, type TermsSection } from "../components/TermsPrivacyModal";
 import { useAuth } from "../auth";
 
 /** วว/ดด/ปปปป — ปีเป็น พ.ศ. ก็ได้ ยังไม่ validate ว่าเป็นวันที่จริง เพราะยังไม่ส่งไปไหน */
@@ -31,6 +32,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  /** หัวข้อที่เปิดอ่านอยู่ — null = ปิดป๊อปอัพ */
+  const [termsOpen, setTermsOpen] = useState<TermsSection | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -107,8 +110,10 @@ export default function RegisterPage() {
         />
 
         <AuthCheckbox checked={acceptedTerms} onChange={setAcceptedTerms}>
-          ยอมรับ<span className="font-medium text-stamp">ข้อตกลงการใช้งาน</span>และ
-          <span className="font-medium text-stamp">นโยบายความเป็นส่วนตัว</span>
+          ยอมรับ
+          <TermsLink onClick={() => setTermsOpen("terms")}>ข้อตกลงการใช้งาน</TermsLink>
+          และ
+          <TermsLink onClick={() => setTermsOpen("privacy")}>นโยบายความเป็นส่วนตัว</TermsLink>
         </AuthCheckbox>
 
         {error && <AuthError message={error} />}
@@ -123,6 +128,33 @@ export default function RegisterPage() {
           เข้าสู่ระบบ
         </Link>
       </p>
+
+      {termsOpen && (
+        <TermsPrivacyModal
+          section={termsOpen}
+          onClose={() => setTermsOpen(null)}
+          onAccept={() => {
+            setAcceptedTerms(true);
+            setTermsOpen(null);
+          }}
+        />
+      )}
     </AuthShell>
+  );
+}
+
+/**
+ * คำที่กดเปิดป๊อปอัพได้ในประโยค checkbox — ต้องเป็น type="button" ไม่งั้นจะ submit ฟอร์ม
+ * และอยู่ใน <label> ได้โดยไม่ติ๊ก checkbox เพราะ browser ไม่ส่งคลิกปุ่มต่อให้ label
+ */
+function TermsLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mx-0.5 rounded font-medium text-stamp underline decoration-stamp/40 underline-offset-2 hover:decoration-stamp focus:outline-none focus-visible:ring-1 focus-visible:ring-stamp"
+    >
+      {children}
+    </button>
   );
 }
