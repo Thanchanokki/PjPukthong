@@ -13,6 +13,7 @@ import { matchMerchantType, merchantTypeOf } from "../../shared/merchant-types.j
 import { Decimal, dec, moneyOut, quantize, sum } from "../../shared/money.js";
 import { type CategoryBook, loadBook } from "../categories/categories.service.js";
 import { normalizeItemPrice } from "../receipts/receipts.schema.js";
+import { duplicateMessage, findDuplicate } from "./duplicates.js";
 import type { TransactionCreate } from "./transactions.schema.js";
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -47,6 +48,15 @@ function resolveCategory(
   }
   return book.match(v.category);
 }
+
+const duplicateQuery = (f: ReturnType<typeof toFields>) => ({
+  docNumber: f.docNumber,
+  merchantTaxId: f.merchantTaxId,
+  merchantName: f.merchantName,
+  purchasedAt: f.purchasedAt,
+  purchasedTime: f.purchasedTime,
+  total: f.total,
+});
 
 /** ฟิลด์ที่ผู้ใช้แก้ได้ — ใช้ร่วมกันทั้งตอน insert และ update */
 /**
@@ -154,6 +164,10 @@ export async function create(
   const fields = toFields(payload, book);
   const items = itemDocs(payload, book);
 
+  // ห้ามบันทึกใบเสร็จซ้ำ — เช็คก่อนแตะสถานะใบเสร็จ
+  const dup = await findDuplicate(userId, duplicateQuery(fields), { receiptId: payload.receipt_id });
+  if (dup) throw httpError(409, duplicateMessage(dup));
+
   let uploadedAt = new Date();
   if (payload.receipt_id) {
     const receipt = await receipts.findOneAndUpdate(
@@ -202,13 +216,17 @@ export async function update(
   payload: TransactionCreate,
 ): Promise<TransactionDoc> {
   const book = await loadBook(userId);
+  const fields = toFields(payload, book);
+  // แก้แล้วไปตรงกับใบอื่นที่บันทึกไว้ = กลายเป็นใบซ้ำ (เทียบกับรายการอื่น ไม่ใช่ตัวเอง)
+  const dup = await findDuplicate(userId, duplicateQuery(fields), { excludeId: id });
+  if (dup) throw httpError(409, duplicateMessage(dup));
   // แทนที่รายการย่อยทั้งชุด (เทียบเท่า cascade delete-orphan ของเดิม)
   const row = await transactions.findOneAndUpdate(
     { _id: id, userId },
     {
       // ไม่แตะ uploadedAt — นั่นคือเวลาที่ระบบ "รับรู้" รายการนี้ ไม่ใช่เวลาที่แก้ล่าสุด
       $set: {
-        ...toFields(payload, book),
+        ...fields,
         items: itemDocs(payload, book),
         verifiedByUser: true,
         updatedAt: new Date(),

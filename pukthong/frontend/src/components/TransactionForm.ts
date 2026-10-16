@@ -29,6 +29,8 @@ export type Form = {
   payment_method: string;
   payment_channel: string;
   note: string;
+  /** VAT บนใบ: none = ไม่มี | included = รวมในราคาแล้ว | excluded = แยกบวกเพิ่ม (ใช้คิดยอดในหน้าตรวจ) */
+  vat_mode: "none" | "included" | "excluded";
   // ข้อมูลกรมธรรม์ — ใช้เฉพาะเมื่อประเภทร้านเป็นประกันภัย
   ins_insurer: string;
   ins_policy_number: string;
@@ -56,6 +58,7 @@ export const EMPTY: Form = {
   payment_method: "",
   payment_channel: "",
   note: "",
+  vat_mode: "included",
   ins_insurer: "",
   ins_policy_number: "",
   ins_policy_type: "",
@@ -86,6 +89,7 @@ export function draftToForm(d: ReceiptDraft): Form {
     total: s(d.total),
     payment_method: s(d.payment_method),
     payment_channel: s(d.payment_channel),
+    vat_mode: !d.vat_amount && !d.vat_rate ? "none" : d.vat_included === false ? "excluded" : "included",
     ins_insurer: s(d.insurance?.insurer),
     ins_policy_number: s(d.insurance?.policy_number),
     ins_policy_type: s(d.insurance?.policy_type),
@@ -155,8 +159,9 @@ export function buildPayload(
     discount: null,
     bill_discounts: billDiscounts,
     service_charge: num(form.service_charge),
-    vat_rate: num(form.vat_rate),
-    vat_amount: num(form.vat_amount),
+    // เลือก "ไม่มี VAT" = ไม่ส่งตัวเลข VAT ที่อาจค้างอยู่ในช่อง
+    vat_rate: form.vat_mode === "none" ? null : num(form.vat_rate),
+    vat_amount: form.vat_mode === "none" ? null : num(form.vat_amount),
     total: form.total,
     payment_method: num(form.payment_method),
     payment_channel: num(form.payment_channel),

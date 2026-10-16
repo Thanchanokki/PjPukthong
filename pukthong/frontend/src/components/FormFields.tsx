@@ -112,7 +112,7 @@ const POLICY_TYPES = [
  * ข้อมูลกรมธรรม์ — ใบเสร็จค่าเบี้ยประกันไม่มีรายการสินค้า จึงเก็บข้อมูลนี้แทน
  * ใช้สรุปเบี้ยประกันรายปีเพื่อลดหย่อนภาษี (หน้า "ลดหย่อนภาษี")
  */
-function InsuranceFields({
+export function InsuranceFields({
   form,
   onChange,
 }: {
@@ -305,11 +305,11 @@ function UnitPriceHint({
 }
 
 /** รายการสินค้า — แก้ ลบ และเพิ่มบรรทัดเองได้ (ตอน AI อ่านมาไม่ครบ) */
-const money = (v: string | null | undefined) => {
+export const money = (v: string | null | undefined) => {
   const n = Number(v);
   return v === null || v === undefined || v === "" || !Number.isFinite(n) ? null : n;
 };
-const fmt = (n: number) =>
+export const fmt = (n: number) =>
   n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
@@ -317,7 +317,7 @@ const fmt = (n: number) =>
  * - แก้ราคาเต็มหรือส่วนลด -> คำนวณสุทธิใหม่
  * - แก้สุทธิโดยตรงขณะมีส่วนลด -> ราคาเต็ม = สุทธิ + ส่วนลด
  */
-function repriceItem(x: LineItem, key: "gross_amount" | "discount" | "amount", v: string): LineItem {
+export function repriceItem(x: LineItem, key: "gross_amount" | "discount" | "amount", v: string): LineItem {
   const next = { ...x, [key]: v === "" ? null : v };
   const gross = money(next.gross_amount);
   const disc = money(next.discount) ?? 0;
@@ -331,7 +331,7 @@ function repriceItem(x: LineItem, key: "gross_amount" | "discount" | "amount", v
 /** ยอดของบิลที่ใช้สรุปใต้รายการสินค้า (มาจากฟอร์มของใบ) */
 type BillTotals = { service_charge: string; total: string };
 
-const DISCOUNT_KIND: Record<BillDiscount["kind"], { icon: string; name: string }> = {
+export const DISCOUNT_KIND: Record<BillDiscount["kind"], { icon: string; name: string }> = {
   discount: { icon: "🏷️", name: "ส่วนลดท้ายบิล" },
   member: { icon: "👤", name: "ส่วนลดสมาชิก" },
   coupon: { icon: "🎟️", name: "คูปอง" },
@@ -632,7 +632,7 @@ function ItemsSummary({
   );
 }
 
-function AddBillDiscount({
+export function AddBillDiscount({
   onAdd,
   onCancel,
 }: {

@@ -288,3 +288,129 @@ export function DoorIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/**
+ * ไอคอนของ flow สแกนใบเสร็จ (ถ่ายภาพ / ครอบ / ตรวจสอบข้อมูล) — เส้นเดียวกับชุด BottomNav
+ */
+function LineIcon({ children, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** ร้านค้า — หัวกล่อง "ข้อมูลร้านค้า" */
+export function StoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M4 9.5 5.2 5h13.6L20 9.5" />
+      <path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0" />
+      <path d="M5.5 12v7h13v-7" />
+      <path d="M10 19v-4h4v4" />
+    </LineIcon>
+  );
+}
+
+/** รายการ — หัวกล่อง "รายการสินค้า" */
+export function ListLinesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M9 7h11M9 12h11M9 17h11" />
+      <path d="M4.5 7h.01M4.5 12h.01M4.5 17h.01" strokeWidth="2.6" />
+    </LineIcon>
+  );
+}
+
+/** เปอร์เซ็นต์ — หัวกล่อง "ส่วนลดและ VAT" */
+export function PercentIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M18 6 6 18" />
+      <circle cx="7.5" cy="7.5" r="2" />
+      <circle cx="16.5" cy="16.5" r="2" />
+    </LineIcon>
+  );
+}
+
+/** บัตร — หัวกล่อง "การชำระเงิน" */
+export function CardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+      <path d="M3 10h18M7 15h3" />
+    </LineIcon>
+  );
+}
+
+/** แฟลช */
+export function FlashIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />
+    </LineIcon>
+  );
+}
+
+/** รูปภาพ — ปุ่มคลังภาพ */
+export function ImageIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m20.5 16-4.5-4.5L7 19.5" />
+    </LineIcon>
+  );
+}
+
+export function CheckIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </LineIcon>
+  );
+}
+
+export function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="m9 6 6 6-6 6" />
+    </LineIcon>
+  );
+}
+
+/** หมุนรูป 90° */
+export function RotateIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 4v7h-7" />
+    </LineIcon>
+  );
+}
+
+export function XIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </LineIcon>
+  );
+}
+
+/** ใบเสร็จ — การ์ดจำนวนใบเสร็จที่สแกนในหน้าแรก */
+export function ReceiptIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4v-17Z" />
+      <path d="M9 8h6M9 11.5h6M9 15h3.5" />
+    </LineIcon>
+  );
+}

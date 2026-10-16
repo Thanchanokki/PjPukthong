@@ -28,9 +28,13 @@ export default async function receiptsController(app: FastifyInstance) {
       has_ocr: result.hasOcr,
       ocr_quality: result.ocrQuality,
       ocr_low_quality: result.ocrLowQuality,
+      saved_as: result.savedAs,
       image_url: `/api/receipts/${result.receiptId}/image`,
     });
   });
+
+  /** จำนวนใบเสร็จที่สแกนแล้ว — การ์ดในหน้าแรก (ประกาศก่อน /:receiptId/* ให้อ่านง่าย) */
+  app.get("/api/receipts/stats", { preHandler: requireAuth }, async (req) => service.scanStats(req.userId));
 
   /** ปุ่ม ✨ ให้ AI อ่านให้ — เรียกซ้ำได้ถ้าผลรอบแรกไม่ดี */
   app.post<{ Params: { receiptId: string } }>(

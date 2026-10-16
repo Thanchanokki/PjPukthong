@@ -9,8 +9,15 @@ import type { ScanConfidence } from "../api";
  * จะถูกเชื่อทั้งที่ไม่ควรเชื่อ หรือถูกเมินทั้งที่ควรฟัง ผู้ใช้ต้องเห็นได้ว่า 78%
  * มาจาก "ยอดรวมตรงกับบนใบแต่วันที่ไม่ตรง" ไม่ใช่เลขที่โผล่มาเฉยๆ
  */
-export function ScanConfidenceCard({ conf }: { conf: ScanConfidence }) {
-  const [open, setOpen] = useState(false);
+export function ScanConfidenceCard({
+  conf,
+  initiallyOpen = false,
+}: {
+  conf: ScanConfidence;
+  /** เปิดรายละเอียดวิธีคิดไว้เลย — ใช้ตอนผู้ใช้กด "คิดมายังไง?" จากแบนเนอร์หน้าตรวจสอบ */
+  initiallyOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
 
   if (conf.score === null) return null;
 
