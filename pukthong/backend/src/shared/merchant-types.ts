@@ -101,7 +101,7 @@ export const MERCHANT_TYPES: MerchantType[] = [
     name: "บิลและบริการ",
     icon: "🧾",
     hint: "Counter Service, ไปรษณีย์, การประปา, การไฟฟ้า, ค่าโทรศัพท์/อินเทอร์เน็ต, ค่าเช่าหอพัก",
-    aliases: ["ที่พัก/ค่าเช่า/บิล", "บิล", "ค่าเช่า", "housing_bills", "rent"],
+    aliases: ["ที่พัก/ค่าเช่า/บิล", "บิล", "ค่าเช่า", "housing_bills", "rent", "utilities"],
     defaultCategory: "housing",
   },
   {

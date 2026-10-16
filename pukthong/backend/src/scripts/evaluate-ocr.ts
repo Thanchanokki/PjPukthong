@@ -7,11 +7,21 @@
  *   npm run evaluate -- --limit=3            # ลองแค่ 3 ใบแรกก่อน (เช็คว่าเฉลยกรอกถูก)
  *   npm run evaluate -- --sizes=... --resume # รันต่อเฉพาะครั้งที่ยังไม่ผ่าน (API ล้มกลางทาง)
  *   npm run evaluate -- --sizes=1200 --resume --table-size=1200   # ทำตารางจากผลที่มี ไม่เรียก API
+ *   npm run evaluate -- --check              # ตรวจรูปแบบเฉลยอย่างเดียว ไม่เรียก API
  *
  * อินพุต (อยู่ใน evaluation/ — ห้าม commit รูปและเฉลยจริง ดู .gitignore):
  *   images/<file>                รูปใบเสร็จต้นฉบับ
  *   ground-truth.csv             เฉลย 1 แถว/ใบ (รูปแบบเดียวกับ ground-truth.example.csv)
  *   truth-text/<file ไม่มีนามสกุล>.txt   (ไม่บังคับ) ข้อความทั้งใบ ใช้คิด CER
+ *
+ * คอลัมน์ของเฉลย:
+ *   items            ราคาสุทธิของสินค้าทีละรายการ คั่นด้วย | — รายการที่มีส่วนลดเขียน "ราคาเต็ม-ส่วนลด"
+ *                    เช่น 699.00|129.00-26.54|249.00-51.23 (= สุทธิ 699.00, 102.46, 197.77)
+ *                    บรรทัดส่วนลด/แต้มไม่ใช่สินค้า ห้ามใส่เป็นรายการ
+ *   bill_discounts   ส่วนลดท้ายบิล คั่นด้วย | ใส่ชนิดนำหน้าได้ เช่น 5.00 หรือ points:3.00|member:10.00
+ *                    (ชนิด: discount, member, coupon, points) — เว้นว่าง = ใบนี้ไม่มีส่วนลดท้ายบิล
+ *   item_categories  id หมวดของสินค้าแต่ละรายการ เรียงตาม items เช่น food|drinks|personal
+ *                    (id ดูใน shared/categories.ts) — เว้นว่าง = ไม่คิดคะแนนหมวดของใบนี้
  *
  * เอาต์พุต evaluation/results/:
  *   table1-accuracy.csv          ความแม่นยำรายฟิลด์ (ที่ขนาดภาพที่แอปใช้จริง)
@@ -19,18 +29,33 @@
  *   table2-by-condition.csv      แยกตามสภาพภาพ
  *   table3-image-size.csv        ขนาดภาพ vs ความถูกต้อง (ย่อรูปต้นฉบับเหลือด้านยาว N px
  *                                แล้วให้ผ่านระบบตามปกติทั้ง OCR และ AI — เหมือนผู้ใช้ถ่ายมาที่ความละเอียดนั้น)
- *   table4-error-causes.csv      จำแนกสาเหตุของข้อผิดพลาด
+ *   table4-error-causes.csv      จำแนกสาเหตุของข้อผิดพลาด (ชั้น OCR / ชั้นแยกฟิลด์)
+ *   table5-item-categories.csv   ชั้นจัดหมวดหมู่: accuracy, macro-F1, amount-weighted + รายหมวด
+ *   table5-confusion-matrix.csv  แถว = หมวดในเฉลย, คอลัมน์ = หมวดที่ระบบจัด
+ *   table6-receipt-score.csv     คะแนนรวมต่อใบ: Exact Match และ Weighted Sum (+ sensitivity)
  *   raw/per-receipt.csv          ผลทุกใบทุกขนาด (มีข้อมูลจากใบจริง — ไม่ขึ้น git)
  *   raw/ocr/*.txt                ข้อความ OCR ดิบ ไว้ตรวจทานสาเหตุด้วยตา
  *
  * กติกาการนับ (ควรเขียนไว้ในรายงาน):
+ *   - ระบบที่ประเมิน = ขั้นตอนเดียวกับปุ่ม "ให้ AI อ่าน" ในแอป: parseDraft -> enrich -> จับคู่หมวด
+ *     -> หมวดเริ่มต้นตามประเภทร้าน (ร้านอาหาร = อาหารทุกรายการ ฯลฯ)
  *   - ยอดเงินถูก = ตรงกับเฉลยที่ทศนิยม 2 ตำแหน่ง (ไม่มีช่วงคลาดเคลื่อน)
  *   - VAT: เฉลย 0.00 กับ AI ตอบว่าไม่มี (null) ถือว่าตรงกัน (ใบที่ไม่มี VAT)
  *   - วันที่ถูก = ตรงทุกหลัก YYYY-MM-DD (หลังแปลง พ.ศ. เป็น ค.ศ.) — เฉลยเว้นว่าง = ไม่คิดคะแนนใบนั้น
  *   - ชื่อร้านถูก = หลังตัดช่องว่าง/เครื่องหมาย ชื่อหนึ่งอยู่ในอีกชื่อ หรือคล้ายกัน ≥ 80%
- *   - รายการสินค้า = จับคู่ยอดเงินแบบ multiset แล้วคิด precision / recall / F1
+ *   - รายการสินค้า = จับคู่ "ราคาสุทธิ" แบบ multiset แล้วคิด precision / recall / F1
+ *     (จับคู่ที่ราคาเต็มและส่วนลดตรงด้วยก่อน แล้วค่อยจับคู่ที่สุทธิตรงอย่างเดียว)
+ *   - ส่วนลดรายชิ้น = เฉพาะรายการที่มีส่วนลด: ถูกเมื่อจับคู่ได้และยอดส่วนลดตรงกัน (P/R/F1)
+ *   - ส่วนลดท้ายบิลถูก = ผลรวมส่วนลดท้ายบิลตรงกับเฉลย (ใบไม่มีส่วนลดทั้งคู่ = ถูก)
+ *   - หมวดสินค้า (ชั้น 3) = คิดเฉพาะรายการที่จับคู่ได้ในชั้น 2 (ไม่ลงโทษซ้ำ) ยกเว้นคะแนนต่อใบ S3
+ *     ที่คิดทุกรายการในเฉลย (รายการที่ระบบอ่านไม่ได้ = จัดหมวดผิด เพราะเงินก้อนนั้นไม่เข้างบ)
+ *   - คะแนนต่อใบ: S2 = 0.40 ยอดรวม + 0.20 วันที่ + 0.15 ชื่อร้าน + 0.10 VAT + 0.15 F1 รายการ
+ *     (ฟิลด์ที่ไม่คิดคะแนนตัดออกแล้วปรับน้ำหนักที่เหลือให้รวมเป็น 1), S3 = สัดส่วนเงินที่จัดหมวดถูก,
+ *     คะแนนรวม = 0.625 S2 + 0.375 S3 (= น้ำหนัก 0.5 : 0.3 ของชั้น 2 : 3 เมื่อตัดชั้น OCR ออก)
+ *     Exact Match = ยอดรวม วันที่ ชื่อร้าน VAT ส่วนลด รายการ และหมวด ถูกหมดทั้งใบ
  *   - CER = edit distance / ความยาวเฉลย (ตัดช่องว่าง แท็ก HTML และสัญลักษณ์ markdown ออกก่อน)
  *   - ใบที่เรียก API ไม่สำเร็จ (ล่ม/โดนจำกัด) ไม่ถูกนับเป็นผิด แต่แจ้งจำนวนแยกไว้
+ *   - ทุกครั้งที่รันจะให้คะแนนผลเก่าใหม่ด้วยเฉลยปัจจุบัน — แก้เฉลยแล้วไม่ต้องเรียก API ซ้ำ
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -40,16 +65,24 @@ import sharp from "sharp";
 import { amountIsGrounded, dateIsGrounded, numbersIn } from "../modules/receipts/confidence.js";
 import { extractReceipt } from "../modules/receipts/ai.provider.js";
 import { prepareForOcr, requestOcr } from "../modules/receipts/ocr.provider.js";
+import { enrich } from "../modules/receipts/receipts.enrich.js";
 import { parseDraft } from "../modules/receipts/receipts.schema.js";
-import { SYSTEM_CATEGORIES } from "../shared/categories.js";
-import { MERCHANT_TYPES } from "../shared/merchant-types.js";
+import { unsupportedReason } from "../modules/receipts/receipts.support.js";
+import { SYSTEM_CATEGORIES, matchCategory } from "../shared/categories.js";
+import { normalizeKind } from "../shared/discounts.js";
+import { MERCHANT_TYPES, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
 import { Decimal } from "../shared/money.js";
 
 const ROOT = path.resolve("evaluation");
 const OUT = path.join(ROOT, "results");
 const RAW = path.join(OUT, "raw");
-/** ขนาดที่แอปใช้จริง — ตาราง 1, 2, 4 ใช้ผลที่ขนาดนี้ */
+/** ขนาดที่แอปใช้จริง — ตาราง 1, 2, 4, 5, 6 ใช้ผลที่ขนาดนี้ */
 const PRODUCTION_SIZE = 2400;
+/**
+ * รูปแบบของผลที่เก็บไว้ — ผลรุ่นก่อน (ไม่มี snap) เก็บแค่คะแนน ไม่มีค่าที่ระบบตอบรายชิ้น
+ * จึงให้คะแนนใหม่ด้วยเฉลยรูปแบบใหม่ไม่ได้ และมาจากระบบรุ่นก่อนมีส่วนลด/ประเภทร้านชุดใหม่
+ */
+const RESULT_VERSION = 2;
 
 // ------------------------------------------------------------------ CLI
 
@@ -59,6 +92,7 @@ const sizes = (arg("sizes") ?? String(PRODUCTION_SIZE)).split(",").map(Number);
 const runs = Number(arg("runs") ?? 1);
 const limit = arg("limit") ? Number(arg("limit")) : Infinity;
 const resume = process.argv.includes("--resume");
+const checkOnly = process.argv.includes("--check");
 /** API ล้มติดกันเท่านี้ครั้ง = มีปัญหาฝั่งผู้ให้บริการ หยุดก่อนจะเปลืองโควตา (รันต่อด้วย --resume) */
 const MAX_CONSECUTIVE_API_ERRORS = 5;
 
@@ -220,12 +254,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * 401 รวมอยู่ด้วย: ตอนรันยาวๆ KKU เคยตอบ 401 ติดกันกว่า 100 ครั้งทั้งที่ key ใช้ได้
  * (เรียกซ้ำภายหลังผ่านปกติ) จึงรอนานกว่ากรณีอื่นก่อนลองใหม่
  */
+/** ข้อความที่ใช้บอกว่าโควตารายวันหมด — main loop เห็นแล้วหยุดทันที */
+const DAILY_LIMIT = "โควตารายวันของ API หมดแล้ว";
+
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      const e = err as { status?: number; name?: string; message?: string; cause?: { status?: number; name?: string } };
+      const e = err as { status?: number; name?: string; message?: string; cause?: { status?: number; name?: string; message?: string } };
+      // KKU ตอบ 401 "This model reached daily limit." — ลองใหม่กี่ครั้งก็ไม่ผ่านจนกว่าจะขึ้นวันใหม่
+      if (/daily limit/i.test(`${e.message} ${e.cause?.message}`)) throw new Error(DAILY_LIMIT);
       const status = e.status ?? e.cause?.status ?? 0;
       const timeout = /timeout|timed out/i.test(`${e.name} ${e.cause?.name} ${e.message}`);
       const retryable = status === 401 || status === 429 || status >= 500 || timeout;
@@ -237,9 +276,9 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ------------------------------------------------------------------ ประเมินทีละใบ
+// ------------------------------------------------------------------ เฉลย
 
-type Truth = {
+type TruthRow = {
   file: string;
   merchant_type: string;
   condition: string;
@@ -248,9 +287,146 @@ type Truth = {
   total: string;
   vat: string;
   items: string;
+  bill_discounts?: string;
+  item_categories?: string;
 };
 
-type Result = {
+type Item = {
+  gross: string | null;
+  /** ส่วนลดรายชิ้น (บวก) — null = ไม่มี */
+  discount: string | null;
+  net: string;
+  category: string | null;
+};
+type BillDiscount = { kind: string; amount: string };
+
+type Truth = TruthRow & { itemList: Item[]; billList: BillDiscount[]; hasCategories: boolean };
+
+/** id ของหมวดกลาง (shared/categories.ts) — ในเฉลยใช้ id หรือชื่อไทยก็ได้ */
+const categoryId = (v: string) => matchCategory(v, SYSTEM_CATEGORIES);
+const categoryName = (id: string | null) =>
+  id === null ? "(ไม่ได้จัดหมวด)" : (SYSTEM_CATEGORIES.find((c) => c.id === id)?.name ?? id);
+
+/** แปลงแถวเฉลยเป็นค่าที่ใช้เทียบ — คืนข้อความผิดพลาดถ้ากรอกผิดรูปแบบ */
+function parseTruth(row: TruthRow): Truth | string {
+  const cells = row.items ? row.items.split("|").map((s) => s.trim()) : [];
+  const itemList: Item[] = [];
+  for (const cell of cells) {
+    const m = /^([\d,]+(?:\.\d+)?)(?:\s*-\s*([\d,]+(?:\.\d+)?))?$/.exec(cell);
+    if (!m) {
+      return cell.startsWith("-")
+        ? `items มีค่าติดลบ "${cell}" — ส่วนลดรายชิ้นให้เขียนติดกับสินค้าเป็น ราคาเต็ม-ส่วนลด, ส่วนลดท้ายบิลย้ายไป bill_discounts`
+        : `items อ่านค่า "${cell}" ไม่ได้`;
+    }
+    const gross = money(m[1])!;
+    const discount = m[2] ? money(m[2]) : null;
+    const net = discount ? new Decimal(gross).minus(discount).toFixed(2) : gross;
+    if (discount && new Decimal(net).isNegative()) return `items "${cell}" ส่วนลดมากกว่าราคาเต็ม`;
+    itemList.push({ gross: discount ? gross : null, discount, net, category: null });
+  }
+
+  const cats = row.item_categories ? row.item_categories.split("|").map((s) => s.trim()) : [];
+  if (cats.length) {
+    if (cats.length !== itemList.length)
+      return `item_categories มี ${cats.length} ค่า แต่ items มี ${itemList.length} รายการ`;
+    for (const [i, c] of cats.entries()) {
+      const id = categoryId(c);
+      if (!id) return `item_categories ไม่รู้จักหมวด "${c}" (ใช้ id: ${SYSTEM_CATEGORIES.map((x) => x.id).join(", ")})`;
+      itemList[i].category = id;
+    }
+  }
+
+  const billList: BillDiscount[] = [];
+  for (const cell of (row.bill_discounts ?? "").split("|").map((s) => s.trim()).filter(Boolean)) {
+    const [kindRaw, amountRaw] = cell.includes(":") ? cell.split(":") : ["discount", cell];
+    const amount = money(amountRaw.replace(/^-/, ""));
+    if (!amount) return `bill_discounts อ่านค่า "${cell}" ไม่ได้`;
+    billList.push({ kind: normalizeKind(kindRaw), amount });
+  }
+
+  return { ...row, itemList, billList, hasCategories: cats.length > 0 };
+}
+
+// ------------------------------------------------------------------ ผลที่ระบบตอบ
+
+/** ค่าที่ระบบตอบ (หลังผ่านขั้นตอนเดียวกับแอป) — เก็บไว้ให้คะแนนใหม่ได้เมื่อแก้เฉลย */
+type Snapshot = {
+  total: string | null;
+  date: string | null;
+  merchant: string | null;
+  merchantType: string | null;
+  vat: string | null;
+  items: Item[];
+  billDiscounts: BillDiscount[];
+  /** ป๊อปอัพ "ไม่รองรับ" ที่แอปจะเด้ง (no_items, handwritten …) — null = ปกติ */
+  unsupported: string | null;
+};
+
+/** ทำซ้ำขั้นตอนใน receipts.service.extract — ผลที่ประเมินจึงเป็นค่าที่ผู้ใช้เห็นในหน้าตรวจจริง */
+function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
+  const d = enrich(parseDraft(payload));
+  for (const item of d.line_items) {
+    const guess = item.category_guess;
+    item.category_guess = categoryId(guess ?? "") ?? categoryId(guess?.split(">").pop() ?? "") ?? null;
+  }
+  if (d.merchant_type) {
+    const type = merchantTypeOf(d.merchant_type);
+    if (type.noItems) d.line_items = [];
+    else if (type.defaultCategory) for (const item of d.line_items) item.category_guess = type.defaultCategory;
+  }
+  return {
+    total: money(d.total),
+    date: d.issued_at,
+    merchant: d.merchant_name,
+    merchantType: d.merchant_type,
+    vat: money(d.vat_amount),
+    items: d.line_items
+      .map((i) => ({
+        gross: money(i.gross_amount),
+        discount: money(i.discount),
+        net: money(i.amount),
+        category: i.category_guess,
+      }))
+      .filter((i): i is Item => i.net !== null),
+    billDiscounts: d.bill_discounts
+      .map((b) => ({ kind: b.kind as string, amount: money(b.amount) }))
+      .filter((b): b is BillDiscount => b.amount !== null),
+    unsupported: unsupportedReason(d)?.kind ?? null,
+  };
+}
+
+// ------------------------------------------------------------------ ให้คะแนน
+
+type CategoryPair = { truth: string; pred: string | null; amount: string };
+
+type Scores = {
+  cer: number | null;
+  totalOk: boolean | null;
+  totalInOcr: boolean | null;
+  dateOk: boolean | null;
+  merchantOk: boolean | null;
+  merchantTypeOk: boolean | null;
+  vatOk: boolean | null;
+  billDiscountOk: boolean | null;
+  /** ระบบเด้ง "ไม่พบรายการสินค้า" ทั้งที่เฉลยมีรายการ — ผู้ใช้บันทึกใบนี้ไม่ได้ */
+  falseReject: boolean;
+  itemTp: number;
+  itemFp: number;
+  itemFn: number;
+  discTp: number;
+  discFp: number;
+  discFn: number;
+  /** รายการที่จับคู่ได้และเฉลยมีหมวด — ใช้คิดชั้น 3 */
+  categoryPairs: CategoryPair[];
+  /** คะแนนต่อใบ (null = ใบนี้ไม่มีข้อมูลพอ) */
+  s2: number | null;
+  s3: number | null;
+  exact: boolean | null;
+  errors: ErrorRow[];
+};
+
+type Result = Scores & {
+  v?: number;
   file: string;
   run: number;
   size: number;
@@ -261,43 +437,183 @@ type Result = {
   aiMs: number;
   /** ขนาดไฟล์ภาพที่ทดสอบ (หลังย่อ ก่อนเข้า OCR) */
   ocrKb: number;
-  cer: number | null;
-  totalOk: boolean | null;
-  totalInOcr: boolean | null;
-  dateOk: boolean | null;
-  merchantOk: boolean | null;
-  merchantTypeOk: boolean | null;
-  vatOk: boolean | null;
-  itemTp: number;
-  itemFp: number;
-  itemFn: number;
-  pred: { total: string | null; date: string | null; merchant: string | null; vat: string | null };
-  errors: ErrorRow[];
+  snap: Snapshot | null;
 };
 
-const categoryList = SYSTEM_CATEGORIES.map((c) => c.name).join(" | ");
+/**
+ * จับคู่รายการเฉลยกับที่ระบบอ่านได้ (ลำดับไม่สำคัญ ยอดซ้ำนับตามจำนวนครั้ง)
+ * รอบแรกจับคู่ที่ราคาเต็ม+ส่วนลด+สุทธิตรงกันหมด รอบสองจับคู่ที่สุทธิตรงอย่างเดียว
+ * — ใบที่มีสินค้าสุทธิเท่ากันสองชิ้นแต่ส่วนลดต่างกัน จึงจับคู่ถูกชิ้น
+ */
+function matchItems(truth: Item[], pred: Item[]) {
+  const usedPred = new Set<number>();
+  const pairOf = new Map<number, number>();
+  const same = (a: Item, b: Item) =>
+    a.net === b.net && (a.discount ?? null) === (b.discount ?? null) && (a.gross ?? a.net) === (b.gross ?? b.net);
+  for (const strict of [true, false]) {
+    for (const [ti, t] of truth.entries()) {
+      if (pairOf.has(ti)) continue;
+      const pi = pred.findIndex((p, i) => !usedPred.has(i) && (strict ? same(t, p) : t.net === p.net));
+      if (pi >= 0) pairOf.set(ti, pi), usedPred.add(pi);
+    }
+  }
+  return {
+    pairs: [...pairOf].map(([ti, pi]) => ({ t: truth[ti], p: pred[pi] })),
+    missing: truth.filter((_, i) => !pairOf.has(i)),
+    extra: pred.filter((_, i) => !usedPred.has(i)),
+  };
+}
+
+const sumOf = (xs: (string | null)[]) => xs.reduce((s, v) => s.plus(v ?? 0), new Decimal(0));
+
+/** น้ำหนักของฟิลด์ในคะแนนชั้น 2 (ดูหัวไฟล์) */
+const S2_WEIGHTS = { total: 0.4, date: 0.2, merchant: 0.15, vat: 0.1, items: 0.15 } as const;
+const LAYER_WEIGHTS = { s2: 0.625, s3: 0.375 };
+
+function score(t: Truth, s: Snapshot, ocrText: string): Scores {
+  const pool = numbersIn(ocrText);
+  const errors: ErrorRow[] = [];
+
+  const truthTotal = money(t.total)!;
+  const totalOk = s.total === truthTotal;
+  if (!totalOk)
+    errors.push({ field: "ยอดรวม", cause: classifyAmount(truthTotal, s.total, pool), truth: truthTotal, pred: s.total ?? "-" });
+
+  // เฉลยเว้นวันที่ไว้ = บนใบอ่านวันที่ไม่ออกจริง (ซีด/เสียหาย) — ไม่นับคะแนนวันที่ของใบนี้
+  const dateOk = t.date ? s.date === t.date : null;
+  if (dateOk === false)
+    errors.push({ field: "วันที่", cause: classifyDate(t.date, s.date, ocrText), truth: t.date, pred: s.date ?? "-" });
+
+  const merchantOk = t.merchant ? merchantMatches(t.merchant, s.merchant) : null;
+  const merchantTypeOk = t.merchant_type ? s.merchantType === appTypeOf(t.merchant_type) : null;
+
+  const truthVat = money(t.vat);
+  const vatOk = scoreVat(truthVat, s.vat);
+  if (vatOk === false)
+    errors.push({ field: "VAT", cause: classifyAmount(truthVat!, s.vat, pool), truth: truthVat!, pred: s.vat ?? "-" });
+
+  const truthBill = sumOf(t.billList.map((b) => b.amount)).toFixed(2);
+  const predBill = sumOf(s.billDiscounts.map((b) => b.amount)).toFixed(2);
+  const billDiscountOk = truthBill === predBill;
+  if (!billDiscountOk)
+    errors.push({
+      field: "ส่วนลดท้ายบิล",
+      cause: truthBill === "0.00" ? (inOcr(predBill, pool) ? "aiExtra" : "hallucination") : classifyAmount(truthBill, predBill === "0.00" ? null : predBill, pool),
+      truth: truthBill,
+      pred: predBill,
+    });
+
+  // ---- รายการสินค้า (ชั้น 2)
+  const { pairs, missing, extra } = matchItems(t.itemList, s.items);
+  const extraLeft = [...extra];
+  for (const v of missing) {
+    // จับคู่ค่าที่อ่านผิดได้ครั้งเดียว — ค่าที่ถูกใช้อธิบายรายการหนึ่งแล้วไม่นับเป็น "เกิน" อีก
+    const idx = extraLeft.findIndex((p) => digitConfusion(v.net, p.net));
+    const confused = idx >= 0 ? extraLeft.splice(idx, 1)[0] : undefined;
+    // สินค้าที่มีส่วนลด: บนใบพิมพ์ราคาเต็ม ไม่ใช่ราคาสุทธิ — เช็คราคาเต็มกับ OCR แทน
+    const printed = v.gross ?? v.net;
+    errors.push({
+      field: "รายการสินค้า (ขาด)",
+      cause: confused ? "digit" : inOcr(printed, pool) ? "aiDropped" : "ocrMissing",
+      truth: v.discount ? `${v.gross}-${v.discount}` : v.net,
+      pred: confused?.net ?? "-",
+    });
+  }
+  for (const p of extraLeft) {
+    errors.push({
+      field: "รายการสินค้า (เกิน)",
+      cause: inOcr(p.gross ?? p.net, pool) ? "aiExtra" : "hallucination",
+      truth: "-",
+      pred: p.discount ? `${p.gross}-${p.discount}` : p.net,
+    });
+  }
+
+  // ---- ส่วนลดรายชิ้น: คิดเฉพาะรายการที่มีส่วนลด (ฝั่งเฉลยหรือฝั่งระบบ)
+  const discTp = pairs.filter(({ t: a, p }) => a.discount !== null && a.discount === p.discount).length;
+  const discFn = t.itemList.filter((i) => i.discount !== null).length - discTp;
+  const discFp = s.items.filter((i) => i.discount !== null).length - discTp;
+  for (const { t: a, p } of pairs) {
+    if (a.discount !== p.discount && (a.discount !== null || p.discount !== null))
+      errors.push({
+        field: "ส่วนลดรายชิ้น",
+        cause: a.discount === null ? "aiExtra" : p.discount === null ? (inOcr(a.discount, pool) ? "aiDropped" : "ocrMissing") : classifyAmount(a.discount, p.discount, pool),
+        truth: a.discount ?? "-",
+        pred: p.discount ?? "-",
+      });
+  }
+
+  // ---- หมวดสินค้า (ชั้น 3)
+  const categoryPairs: CategoryPair[] = pairs
+    .filter(({ t: a }) => a.category !== null)
+    .map(({ t: a, p }) => ({ truth: a.category!, pred: p.category, amount: a.net }));
+
+  // ---- คะแนนต่อใบ
+  const itemTp = pairs.length;
+  const itemFp = s.items.length - itemTp;
+  const itemFn = missing.length;
+  const itemF1 = itemTp + itemFp + itemFn === 0 ? 1 : (2 * itemTp) / (2 * itemTp + itemFp + itemFn);
+  const parts: [number, boolean | number | null][] = [
+    [S2_WEIGHTS.total, totalOk],
+    [S2_WEIGHTS.date, dateOk],
+    [S2_WEIGHTS.merchant, merchantOk],
+    [S2_WEIGHTS.vat, vatOk],
+    [S2_WEIGHTS.items, itemF1],
+  ];
+  const scored = parts.filter(([, v]) => v !== null) as [number, boolean | number][];
+  const wSum = scored.reduce((a, [w]) => a + w, 0);
+  const s2 = wSum ? scored.reduce((a, [w, v]) => a + w * Number(v), 0) / wSum : null;
+
+  // S3 ถ่วงด้วยเงิน และคิดทุกรายการในเฉลย — รายการที่ระบบอ่านไม่ได้ ไม่ได้เข้างบหมวดไหนเลย
+  let s3: number | null = null;
+  if (t.hasCategories && t.itemList.length) {
+    const correct = new Set(categoryPairs.filter((c) => c.pred === c.truth).map((c) => c));
+    const totalW = sumOf(t.itemList.map((i) => i.net));
+    if (totalW.gt(0)) s3 = sumOf([...correct].map((c) => c.amount)).div(totalW).toNumber();
+    else s3 = correct.size / t.itemList.length;
+  }
+
+  const categoriesOk = t.hasCategories ? categoryPairs.every((c) => c.pred === c.truth) : null;
+  const exact =
+    t.hasCategories || !t.itemList.length
+      ? totalOk && dateOk !== false && merchantOk !== false && vatOk !== false && billDiscountOk &&
+        itemFp === 0 && itemFn === 0 && discFp === 0 && discFn === 0 && categoriesOk !== false
+      : null; // ยังไม่ได้กรอกหมวด — ตัดสินทั้งใบไม่ได้
+
+  const truthTextFile = path.join(ROOT, "truth-text", `${path.parse(t.file).name}.txt`);
+  return {
+    cer: existsSync(truthTextFile) && ocrText ? cer(readFileSync(truthTextFile, "utf8"), ocrText) : null,
+    totalOk,
+    totalInOcr: ocrText ? inOcr(truthTotal, pool) : null,
+    dateOk,
+    merchantOk,
+    merchantTypeOk,
+    vatOk,
+    billDiscountOk,
+    falseReject: s.unsupported === "no_items" && t.itemList.length > 0,
+    itemTp,
+    itemFp,
+    itemFn,
+    discTp,
+    discFp,
+    discFn,
+    categoryPairs,
+    s2,
+    s3,
+    exact,
+    errors,
+  };
+}
+
+// ------------------------------------------------------------------ ประเภทร้าน
 
 /**
  * ประเภทร้านในเฉลยละเอียดกว่าชุดของแอป (shared/merchant-types.ts) — ตาราง 2 ใช้ชื่อในเฉลย
- * ตรงๆ ส่วนการตัดสิน "ประเภทร้านถูก" ต้องแปลงเป็น id ของแอปก่อนเทียบ
- * ชื่อที่ตรงกับ id ของแอปอยู่แล้ว (เช่น convenience, restaurant) ไม่ต้องอยู่ในตารางนี้
- * ⚠️ ตัวที่ก้ำกึ่ง (sports, gift, home_goods) ตัดสินเป็น other_shop — แก้ได้ถ้าเห็นต่าง
+ * ตรงๆ ส่วนการตัดสิน "ประเภทร้านถูก" แปลงเป็น id ของแอปผ่าน aliases ของประเภทร้านก่อนเทียบ
+ * (beauty -> beauty_personal, medical -> pharmacy, cafe/fast_food -> restaurant,
+ *  clothing/accessories -> department_fashion, wholesale -> supermarket, home_goods -> home_hardware,
+ *  rent -> bills_services, sports/gift/entertainment -> general_other)
  */
-const TRUTH_TO_APP_TYPE: Record<string, string> = {
-  beauty: "pharmacy_beauty",
-  medical: "pharmacy_beauty",
-  cafe: "restaurant",
-  fast_food: "restaurant",
-  clothing: "fashion",
-  accessories: "fashion",
-  supermarket: "convenience",
-  wholesale: "convenience",
-  rent: "housing_bills",
-  sports: "other_shop",
-  gift: "other_shop",
-  home_goods: "other_shop",
-};
-const appTypeOf = (truthType: string) => TRUTH_TO_APP_TYPE[truthType] ?? truthType;
+const appTypeOf = (truthType: string) => matchMerchantType(truthType) ?? truthType;
 
 /** ชื่อไทยของประเภทร้านในเฉลย สำหรับตาราง 2 (ชื่อที่ไม่อยู่ในนี้ใช้ชื่อของแอป หรือ id ตรงๆ) */
 const TRUTH_TYPE_LABEL: Record<string, string> = {
@@ -318,8 +634,22 @@ const TRUTH_TYPE_LABEL: Record<string, string> = {
   entertainment: "บันเทิง",
 };
 
+// ------------------------------------------------------------------ ประเมินทีละใบ
+
+const categoryList = SYSTEM_CATEGORIES.map((c) => c.name).join(" | ");
+const ocrFile = (r: { file: string; size: number; run: number }) =>
+  path.join(RAW, "ocr", `${path.parse(r.file).name}__${r.size}px__r${r.run}.txt`);
+
+const EMPTY_SCORES: Scores = {
+  cer: null, totalOk: null, totalInOcr: null, dateOk: null, merchantOk: null, merchantTypeOk: null,
+  vatOk: null, billDiscountOk: null, falseReject: false,
+  itemTp: 0, itemFp: 0, itemFn: 0, discTp: 0, discFp: 0, discFn: 0,
+  categoryPairs: [], s2: null, s3: null, exact: null, errors: [],
+};
+
 async function evaluate(t: Truth, run: number, size: number): Promise<Result> {
   const base = {
+    v: RESULT_VERSION,
     file: t.file,
     run,
     size,
@@ -351,99 +681,23 @@ async function evaluate(t: Truth, run: number, size: number): Promise<Result> {
   } catch (err) {
     return {
       ...base,
+      ...EMPTY_SCORES,
       apiError: err instanceof Error ? err.message : String(err),
-      ocrMs, aiMs, ocrKb: Math.round(stored.length / 1024), cer: null,
-      totalOk: null, totalInOcr: null, dateOk: null, merchantOk: null, merchantTypeOk: null, vatOk: null,
-      itemTp: 0, itemFp: 0, itemFn: 0,
-      pred: { total: null, date: null, merchant: null, vat: null },
-      errors: [],
+      ocrMs, aiMs, ocrKb: Math.round(stored.length / 1024),
+      snap: null,
     };
   }
 
-  writeFileSync(
-    path.join(RAW, "ocr", `${path.parse(t.file).name}__${size}px__r${run}.txt`),
-    ocrText,
-  );
-
-  const d = parseDraft(payload);
-  const pool = numbersIn(ocrText);
-  const errors: ErrorRow[] = [];
-
-  const truthTotal = money(t.total)!;
-  const predTotal = money(d.total);
-  const totalOk = predTotal === truthTotal;
-  if (!totalOk)
-    errors.push({ field: "ยอดรวม", cause: classifyAmount(truthTotal, predTotal, pool), truth: truthTotal, pred: predTotal ?? "-" });
-
-  // เฉลยเว้นวันที่ไว้ = บนใบอ่านวันที่ไม่ออกจริง (ซีด/เสียหาย) — ไม่นับคะแนนวันที่ของใบนี้
-  const dateOk = t.date ? d.issued_at === t.date : null;
-  if (dateOk === false)
-    errors.push({ field: "วันที่", cause: classifyDate(t.date, d.issued_at, ocrText), truth: t.date, pred: d.issued_at ?? "-" });
-
-  const merchantOk = t.merchant ? merchantMatches(t.merchant, d.merchant_name) : null;
-  const merchantTypeOk = t.merchant_type ? d.merchant_type === appTypeOf(t.merchant_type) : null;
-
-  const truthVat = money(t.vat);
-  const predVat = money(d.vat_amount);
-  const vatOk = scoreVat(truthVat, predVat);
-  if (vatOk === false)
-    errors.push({ field: "VAT", cause: classifyAmount(truthVat!, predVat, pool), truth: truthVat!, pred: predVat ?? "-" });
-
-  // รายการสินค้า: จับคู่ยอดแบบ multiset (ลำดับไม่สำคัญ ยอดซ้ำนับตามจำนวนครั้ง)
-  const truthItems = t.items ? t.items.split("|").map(money).filter((v): v is string => v !== null) : [];
-  const predItems = d.line_items.map((i) => money(i.amount)).filter((v): v is string => v !== null);
-  const left = [...predItems];
-  const missing: string[] = [];
-  for (const v of truthItems) {
-    const i = left.indexOf(v);
-    if (i >= 0) left.splice(i, 1);
-    else missing.push(v);
-  }
-  const itemTp = truthItems.length - missing.length;
-  // จับคู่ค่าที่อ่านผิดได้ครั้งเดียว — ค่าที่ถูกใช้อธิบายรายการหนึ่งแล้วไม่นับเป็น "เกิน" อีก
-  const confusedUsed = new Set<number>();
-  for (const v of missing) {
-    const idx = left.findIndex((p, i) => !confusedUsed.has(i) && digitConfusion(v, p));
-    const confused = idx >= 0 ? left[idx] : undefined;
-    if (idx >= 0) confusedUsed.add(idx);
-    errors.push({
-      field: "รายการสินค้า (ขาด)",
-      cause: confused ? "digit" : inOcr(v, pool) ? "aiDropped" : "ocrMissing",
-      truth: v,
-      pred: confused ?? "-",
-    });
-  }
-  for (const [i, v] of left.entries()) {
-    if (confusedUsed.has(i)) continue; // นับไปแล้วในฝั่ง "ขาด" (อ่านตัวเลขผิด)
-    errors.push({
-      field: "รายการสินค้า (เกิน)",
-      cause: inOcr(v, pool) ? "aiExtra" : "hallucination",
-      truth: "-",
-      pred: v,
-    });
-  }
-
-  const truthTextFile = path.join(ROOT, "truth-text", `${path.parse(t.file).name}.txt`);
-  const cerValue = existsSync(truthTextFile) ? cer(readFileSync(truthTextFile, "utf8"), ocrText) : null;
-
+  writeFileSync(ocrFile({ file: t.file, size, run }), ocrText);
+  const snap = snapshotOf(payload);
   return {
     ...base,
+    ...score(t, snap, ocrText),
     apiError: null,
     ocrMs,
     aiMs,
     ocrKb: Math.round(stored.length / 1024),
-    cer: cerValue,
-    totalOk,
-    totalInOcr: inOcr(truthTotal, pool),
-    dateOk,
-    merchantOk,
-    merchantTypeOk,
-    vatOk,
-    itemTp,
-    itemFp: predItems.length - itemTp,
-    itemFn: missing.length,
-    pred: { total: predTotal, date: d.issued_at, merchant: d.merchant_name, vat: predVat },
-    errors,
+    snap,
   };
 }
 
@@ -451,27 +705,57 @@ async function evaluate(t: Truth, run: number, size: number): Promise<Result> {
 
 const pct = (num: number, den: number) => (den ? ((num / den) * 100).toFixed(1) : "-");
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+const sd = (xs: number[]) => {
+  const m = mean(xs);
+  return m === null || xs.length < 2 ? null : Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
+};
 const fixed = (v: number | null, dp = 1) => (v === null ? "-" : v.toFixed(dp));
 
-function rate(rs: Result[], key: "totalOk" | "dateOk" | "merchantOk" | "merchantTypeOk" | "vatOk" | "totalInOcr") {
+type RateKey = "totalOk" | "dateOk" | "merchantOk" | "merchantTypeOk" | "vatOk" | "totalInOcr" | "billDiscountOk" | "exact";
+function rate(rs: Result[], key: RateKey) {
   const scored = rs.filter((r) => r[key] !== null);
   return { n: scored.length, ok: scored.filter((r) => r[key]).length };
 }
 
-function itemScores(rs: Result[]) {
-  const tp = rs.reduce((s, r) => s + r.itemTp, 0);
-  const fp = rs.reduce((s, r) => s + r.itemFp, 0);
-  const fn = rs.reduce((s, r) => s + r.itemFn, 0);
+function prf(tp: number, fp: number, fn: number) {
   const p = tp + fp ? tp / (tp + fp) : 0;
   const r = tp + fn ? tp / (tp + fn) : 0;
   return { tp, fp, fn, p, r, f1: p + r ? (2 * p * r) / (p + r) : 0 };
+}
+const total = (rs: Result[], k: "itemTp" | "itemFp" | "itemFn" | "discTp" | "discFp" | "discFn") =>
+  rs.reduce((s, r) => s + r[k], 0);
+const itemScores = (rs: Result[]) => prf(total(rs, "itemTp"), total(rs, "itemFp"), total(rs, "itemFn"));
+const discountScores = (rs: Result[]) => prf(total(rs, "discTp"), total(rs, "discFp"), total(rs, "discFn"));
+
+/** ชั้น 3: accuracy, macro-F1 (เฉลี่ยทุกหมวดที่มีในเฉลย), amount-weighted accuracy */
+function categoryScores(rs: Result[]) {
+  const pairs = rs.flatMap((r) => r.categoryPairs);
+  const correct = pairs.filter((p) => p.pred === p.truth);
+  const classes = [...new Set(pairs.map((p) => p.truth))];
+  const perClass = classes.map((c) => {
+    const tp = pairs.filter((p) => p.truth === c && p.pred === c).length;
+    const fp = pairs.filter((p) => p.truth !== c && p.pred === c).length;
+    const fn = pairs.filter((p) => p.truth === c && p.pred !== c).length;
+    return { id: c, n: tp + fn, ...prf(tp, fp, fn) };
+  });
+  const amountAll = sumOf(pairs.map((p) => p.amount));
+  const amountOk = sumOf(correct.map((p) => p.amount));
+  return {
+    pairs,
+    n: pairs.length,
+    accuracy: pairs.length ? correct.length / pairs.length : null,
+    macroF1: perClass.length ? perClass.reduce((a, c) => a + c.f1, 0) / perClass.length : null,
+    weighted: amountAll.gt(0) ? amountOk.div(amountAll).toNumber() : null,
+    perClass: perClass.sort((a, b) => b.n - a.n),
+  };
 }
 
 function groupTable(rs: Result[], key: "merchantType" | "condition", label: string) {
   const groups = new Map<string, Result[]>();
   for (const r of rs) groups.set(r[key], [...(groups.get(r[key]) ?? []), r]);
   const rows: (string | number | null)[][] = [
-    [label, "จำนวนใบ", "ยอดรวมถูก (%)", "วันที่ถูก (%)", "ชื่อร้านถูก (%)", "รายการสินค้า F1 (%)", "CER เฉลี่ย (%)"],
+    [label, "จำนวนใบ", "ยอดรวมถูก (%)", "วันที่ถูก (%)", "ชื่อร้านถูก (%)", "รายการสินค้า F1 (%)",
+      "หมวดสินค้าถูก (%)", "CER เฉลี่ย (%)"],
   ];
   for (const [g, list] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
     const name =
@@ -479,6 +763,7 @@ function groupTable(rs: Result[], key: "merchantType" | "condition", label: stri
         ? (TRUTH_TYPE_LABEL[g] ?? MERCHANT_TYPES.find((m) => m.id === g)?.name ?? g)
         : g;
     const cers = list.map((r) => r.cer).filter((v): v is number => v !== null);
+    const cat = categoryScores(list);
     rows.push([
       name,
       list.length,
@@ -486,6 +771,7 @@ function groupTable(rs: Result[], key: "merchantType" | "condition", label: stri
       pct(rate(list, "dateOk").ok, rate(list, "dateOk").n),
       pct(rate(list, "merchantOk").ok, rate(list, "merchantOk").n),
       (itemScores(list).f1 * 100).toFixed(1),
+      cat.accuracy === null ? "-" : (cat.accuracy * 100).toFixed(1),
       cers.length ? fixed(mean(cers)! * 100) : "-",
     ]);
   }
@@ -501,35 +787,55 @@ if (!existsSync(truthFile)) {
   );
   process.exit(1);
 }
-const truths = (parseCsv(readFileSync(truthFile, "utf8")) as Truth[])
-  .filter((t) => t.file)
-  .slice(0, limit);
-const missingImages = truths.filter((t) => !existsSync(path.join(ROOT, "images", t.file)));
-if (missingImages.length) {
-  console.error("ไม่พบรูปใน evaluation/images/: " + missingImages.map((t) => t.file).join(", "));
-  process.exit(1);
+const rows = (parseCsv(readFileSync(truthFile, "utf8")) as TruthRow[]).filter((t) => t.file).slice(0, limit);
+
+const problems: string[] = [];
+const truths: Truth[] = [];
+// ระบบอ่านรูปละ 1 ใบเสร็จ — ไฟล์เดียวกันสองแถวจะทับผลกันเอง (รูปที่มีหลายบิลให้ครอปแยกเป็นคนละไฟล์)
+const seen = new Set<string>();
+for (const row of rows) {
+  if (seen.has(row.file)) problems.push(`${row.file}: มีมากกว่า 1 แถว — 1 รูปต้องมีเฉลย 1 แถว`);
+  seen.add(row.file);
+  if (!money(row.total)) problems.push(`${row.file}: total ต้องเป็นตัวเลข`);
+  if (row.date && !/^\d{4}-\d{2}-\d{2}$/.test(row.date))
+    problems.push(`${row.file}: date ต้องเป็น YYYY-MM-DD (หรือเว้นว่างถ้าบนใบอ่านวันที่ไม่ออก)`);
+  if (!existsSync(path.join(ROOT, "images", row.file))) problems.push(`${row.file}: ไม่พบรูปใน evaluation/images/`);
+  const t = parseTruth(row);
+  if (typeof t === "string") problems.push(`${row.file}: ${t}`);
+  else {
+    // ยอดรวมควรเท่ากับ สุทธิของรายการ − ส่วนลดท้ายบิล — ไม่ตรง = เฉลยน่าจะกรอกผิด (เตือนเฉยๆ
+    // เพราะบางใบมีค่าบริการ/ปัดเศษที่ไม่ได้อยู่ในรายการ)
+    const expect = sumOf(t.itemList.map((i) => i.net)).minus(sumOf(t.billList.map((b) => b.amount)));
+    if (t.itemList.length && money(t.total) && !expect.eq(money(t.total)!))
+      console.log(`⚠️ ${t.file}: รายการ − ส่วนลดท้ายบิล = ${expect.toFixed(2)} แต่ total = ${money(t.total)} — ตรวจเฉลยอีกที`);
+    truths.push(t);
+  }
 }
-const badRows = truths.filter((t) => !money(t.total) || (t.date && !/^\d{4}-\d{2}-\d{2}$/.test(t.date)));
-if (badRows.length) {
-  console.error(
-    "เฉลยต้องมี total เป็นตัวเลข และ date เป็น YYYY-MM-DD (หรือเว้นว่างถ้าบนใบอ่านวันที่ไม่ออก): " +
-      badRows.map((t) => t.file).join(", "),
-  );
+if (problems.length) {
+  console.error("เฉลยยังกรอกไม่ถูกรูปแบบ:\n  " + problems.join("\n  "));
   process.exit(1);
 }
 const unknownTypes = [
   ...new Set(truths.map((t) => t.merchant_type).filter((m) => m && !MERCHANT_TYPES.some((x) => x.id === appTypeOf(m)))),
 ];
 if (unknownTypes.length) {
-  console.log(`⚠️ ประเภทร้านในเฉลยที่แปลงเป็นของแอปไม่ได้ (นับว่าผิดเสมอ): ${unknownTypes.join(", ")} — เพิ่มใน TRUTH_TO_APP_TYPE`);
+  console.log(`⚠️ ประเภทร้านในเฉลยที่แปลงเป็นของแอปไม่ได้ (นับว่าผิดเสมอ): ${unknownTypes.join(", ")} — เพิ่มใน aliases ของ shared/merchant-types.ts`);
 }
 const noDate = truths.filter((t) => !t.date);
 if (noDate.length) {
   console.log(`ℹ️ ไม่คิดคะแนนวันที่ของ ${noDate.length} ใบที่เฉลยเว้นวันที่ไว้: ${noDate.map((t) => t.file).join(", ")}`);
 }
+const noCats = truths.filter((t) => t.itemList.length && !t.hasCategories);
+if (noCats.length) {
+  console.log(`ℹ️ ยังไม่ได้กรอก item_categories ${noCats.length} ใบ — ไม่คิดคะแนนหมวด/Exact Match ของใบเหล่านี้`);
+}
+if (checkOnly) {
+  console.log(`✓ เฉลย ${truths.length} ใบอ่านได้ครบ`);
+  process.exit(0);
+}
 
 mkdirSync(path.join(RAW, "ocr"), { recursive: true });
-const total = truths.length * sizes.length * runs;
+const runCount = truths.length * sizes.length * runs;
 
 // ผลที่ผ่านแล้วจากครั้งก่อน (เก็บทุกครั้งที่ประเมินเสร็จหนึ่งใบ) — --resume ข้ามตัวที่ผ่านแล้ว
 const STATE = path.join(RAW, "results.json");
@@ -537,22 +843,26 @@ const inTruthFiles = new Set(truths.map((t) => t.file));
 const keyOf = (r: { file: string; size: number; run: number }) => `${r.file}|${r.size}|${r.run}`;
 // โหลดผลเดิมเสมอเพื่อไม่ให้ทับของที่สะสมไว้ — --resume แค่ตัดสินว่าจะข้ามตัวที่ผ่านแล้วไหม
 // (ไม่ใส่ --resume = ประเมินใหม่ทุกตัวที่สั่ง แล้วเขียนทับเฉพาะ key เดียวกัน)
-const store = new Map<string, Result>(
-  (existsSync(STATE) ? (JSON.parse(readFileSync(STATE, "utf8")) as Result[]) : [])
-    .filter((r) => !r.apiError)
-    .map((r) => [keyOf(r), r]),
+// ผลรุ่นเก่า (ไม่มี snap) เก็บไว้ในไฟล์ตามเดิมแต่ไม่นับ — ใบนั้นจะถูกประเมินใหม่
+const stored = (existsSync(STATE) ? (JSON.parse(readFileSync(STATE, "utf8")) as Result[]) : []).filter(
+  (r) => !r.apiError,
 );
-const saveState = () => writeFileSync(STATE, JSON.stringify([...store.values()]));
-const todo = resume
-  ? total -
-    [...store.keys()].filter((k) => {
+const legacy = stored.filter((r) => r.v !== RESULT_VERSION);
+const store = new Map<string, Result>(stored.filter((r) => r.v === RESULT_VERSION).map((r) => [keyOf(r), r]));
+const saveState = () => writeFileSync(STATE, JSON.stringify([...legacy, ...store.values()]));
+const done0 = resume
+  ? [...store.keys()].filter((k) => {
       const [file, size, run] = k.split("|");
       return inTruthFiles.has(file) && sizes.includes(Number(size)) && Number(run) <= runs;
     }).length
-  : total;
+  : 0;
+const todo = runCount - done0;
+if (legacy.length) {
+  console.log(`ℹ️ ผลรุ่นก่อน ${legacy.length} ครั้งไม่ถูกนับ (ระบบรุ่นเก่า ไม่มีข้อมูลส่วนลด/หมวดรายชิ้น) — ต้องประเมินใหม่`);
+}
 console.log(
-  `ประเมิน ${truths.length} ใบ × ${sizes.length} ขนาด × ${runs} รอบ = ${total} ครั้ง` +
-    (resume ? ` (ผ่านแล้ว ${total - todo}, เหลือ ${todo})` : "") +
+  `ประเมิน ${truths.length} ใบ × ${sizes.length} ขนาด × ${runs} รอบ = ${runCount} ครั้ง` +
+    (resume ? ` (ผ่านแล้ว ${done0}, เหลือ ${todo})` : "") +
     ` — จะเรียก API ประมาณ ${todo * 2} ครั้ง`,
 );
 
@@ -577,6 +887,11 @@ outer: for (let run = 1; run <= runs; run++) {
         saveState();
       }
       streak = r.apiError ? streak + 1 : 0;
+      if (r.apiError === DAILY_LIMIT) {
+        console.log(`\n⛔ ${DAILY_LIMIT} (ประเมินแล้ว ${store.size} ครั้ง) — รอวันถัดไปแล้วรันคำสั่งเดิมต่อท้ายด้วย --resume`);
+        aborted = true;
+        break outer;
+      }
       if (streak >= MAX_CONSECUTIVE_API_ERRORS) {
         console.log(`\n⛔ API ล้มติดกัน ${streak} ครั้ง — หยุดก่อนเพื่อไม่ให้เปลืองโควตา`);
         console.log(`   ล่าสุด: ${r.apiError}`);
@@ -584,8 +899,13 @@ outer: for (let run = 1; run <= runs; run++) {
         aborted = true;
         break outer;
       }
-      const mark = r.apiError ? `⚠️ API error: ${r.apiError.slice(0, 60)}` : `ยอดรวม ${r.totalOk ? "✓" : "✗"} วันที่ ${r.dateOk === null ? "-" : r.dateOk ? "✓" : "✗"} รายการ ${r.itemTp}/${r.itemTp + r.itemFn}`;
-      console.log(`[${done}/${total}] รอบ ${run} ${size}px ${t.file} — ${mark}`);
+      const mark = r.apiError
+        ? `⚠️ API error: ${r.apiError.slice(0, 60)}`
+        : `ยอดรวม ${r.totalOk ? "✓" : "✗"} วันที่ ${r.dateOk === null ? "-" : r.dateOk ? "✓" : "✗"} ` +
+          `รายการ ${r.itemTp}/${r.itemTp + r.itemFn}` +
+          (r.categoryPairs.length ? ` หมวด ${r.categoryPairs.filter((c) => c.pred === c.truth).length}/${r.categoryPairs.length}` : "") +
+          (r.falseReject ? " ⛔ระบบปฏิเสธใบ" : "");
+      console.log(`[${done}/${runCount}] รอบ ${run} ${size}px ${t.file} — ${mark}`);
       await sleep(500); // เว้นช่วงกันโดนจำกัดการเรียก
     }
   }
@@ -594,25 +914,20 @@ outer: for (let run = 1; run <= runs; run++) {
 /**
  * ตารางคิดจากผลทั้งหมดที่สะสมไว้ (ทุกขนาดที่เคยรันผ่าน) ไม่ใช่แค่รอบนี้
  * จึงแบ่งรันทีละขนาดข้ามวันได้ (โควตา API รายวัน) แล้วตารางยังครบทุกขนาด
- * ใช้เฉพาะใบที่ยังอยู่ในเฉลยตอนนี้ — แถวที่ลบออกจากเฉลยแล้วจะไม่ถูกนับ
+ * ใช้เฉพาะใบที่ยังอยู่ในเฉลยตอนนี้ และให้คะแนนใหม่จากค่าที่ระบบตอบซึ่งเก็บไว้ —
+ * แก้เฉลยแล้วรัน --resume ตารางเปลี่ยนตามโดยไม่ต้องเรียก API
  */
-const inTruth = new Set(truths.map((t) => t.file));
 const truthByFile = new Map(truths.map((t) => [t.file, t]));
-// ให้คะแนน VAT ใหม่ด้วยกติกาปัจจุบันจากค่าที่ AI ตอบซึ่งเก็บไว้แล้ว — ผลเก่าไม่ต้องเรียก API ซ้ำ
-const cumulative = [...store.values()]
-  .filter((r) => inTruth.has(r.file))
+const cumulative: Result[] = [...store.values()]
+  .filter((r) => truthByFile.has(r.file) && r.snap)
   .map((r) => {
-    const vatOk = scoreVat(money(truthByFile.get(r.file)!.vat), r.pred.vat);
-    return {
-      ...r,
-      vatOk,
-      errors: vatOk === false ? r.errors : r.errors.filter((e) => e.field !== "VAT"),
-    };
+    const text = existsSync(ocrFile(r)) ? readFileSync(ocrFile(r), "utf8") : "";
+    return { ...r, ...score(truthByFile.get(r.file)!, r.snap!, text) };
   });
 const ok = cumulative.filter((r) => !r.apiError);
 const ranSizes = [...new Set(ok.map((r) => r.size))].sort((a, b) => a - b);
 /**
- * ตาราง 1, 2, 4 ใช้ขนาดที่แอปใช้จริงถ้ามีผลแล้ว ไม่งั้นใช้ขนาดใหญ่สุดที่มี
+ * ตาราง 1, 2, 4, 5, 6 ใช้ขนาดที่แอปใช้จริงถ้ามีผลแล้ว ไม่งั้นใช้ขนาดใหญ่สุดที่มี
  * --table-size=N บังคับขนาดเอง (เช่นตอนขนาดใหญ่สุดยังรันไม่ครบทุกใบ)
  */
 const tableSize = arg("table-size")
@@ -623,26 +938,41 @@ const tableSize = arg("table-size")
 const main = ok.filter((r) => r.size === tableSize);
 const apiErrors = results.filter((r) => r.apiError).length;
 
+const itemText = (i: Item) => `${i.discount ? `${i.gross}-${i.discount}` : i.net}${i.category ? `[${i.category}]` : ""}`;
+
 // raw: ทุกใบทุกขนาด
 writeCsv(path.join(RAW, "per-receipt.csv"), [
-  ["file", "run", "size_px", "merchant_type", "condition", "api_error", "ocr_ms", "ai_ms", "image_kb", "cer",
+  ["file", "run", "size_px", "merchant_type", "condition", "ocr_ms", "ai_ms", "image_kb", "cer",
     "total_ok", "total_pred", "total_in_ocr", "date_ok", "date_pred", "merchant_ok", "merchant_pred",
-    "merchant_type_ok", "vat_ok", "vat_pred", "item_tp", "item_fp", "item_fn", "errors"],
-  ...cumulative.map((r) => [
-    r.file, r.run, r.size, r.merchantType, r.condition, r.apiError, r.ocrMs, r.aiMs, r.ocrKb, r.cer === null ? null : r.cer.toFixed(4),
-    String(r.totalOk), r.pred.total, String(r.totalInOcr), String(r.dateOk), r.pred.date, String(r.merchantOk), r.pred.merchant,
-    String(r.merchantTypeOk), String(r.vatOk), r.pred.vat, r.itemTp, r.itemFp, r.itemFn,
-    r.errors.map((e) => `${e.field}: ${e.truth}→${e.pred} [${CAUSES[e.cause]}]`).join(" ; "),
-  ]),
+    "merchant_type_ok", "merchant_type_pred", "vat_ok", "vat_pred", "bill_discount_ok", "bill_discounts_pred",
+    "item_tp", "item_fp", "item_fn", "disc_tp", "disc_fp", "disc_fn", "category_ok", "category_n",
+    "s2", "s3", "receipt_score", "exact_match", "unsupported", "items_pred", "errors"],
+  ...cumulative.map((r) => {
+    const s = r.snap!;
+    const score = r.s2 === null ? null : r.s3 === null ? r.s2 : LAYER_WEIGHTS.s2 * r.s2 + LAYER_WEIGHTS.s3 * r.s3;
+    return [
+      r.file, r.run, r.size, r.merchantType, r.condition, r.ocrMs, r.aiMs, r.ocrKb, r.cer === null ? null : r.cer.toFixed(4),
+      String(r.totalOk), s.total, String(r.totalInOcr), String(r.dateOk), s.date, String(r.merchantOk), s.merchant,
+      String(r.merchantTypeOk), s.merchantType, String(r.vatOk), s.vat, String(r.billDiscountOk),
+      s.billDiscounts.map((b) => `${b.kind}:${b.amount}`).join("|"),
+      r.itemTp, r.itemFp, r.itemFn, r.discTp, r.discFp, r.discFn,
+      r.categoryPairs.filter((c) => c.pred === c.truth).length, r.categoryPairs.length,
+      fixed(r.s2, 3), fixed(r.s3, 3), fixed(score, 3), String(r.exact), s.unsupported,
+      s.items.map(itemText).join("|"),
+      r.errors.map((e) => `${e.field}: ${e.truth}→${e.pred} [${CAUSES[e.cause]}]`).join(" ; "),
+    ];
+  }),
 ]);
 
 // ตาราง 1
 const items = itemScores(main);
+const disc = discountScores(main);
 const cers = main.map((r) => r.cer).filter((v): v is number => v !== null);
-const row1 = (name: string, k: Parameters<typeof rate>[1]) => {
+const row1 = (name: string, k: RateKey) => {
   const { n, ok: c } = rate(main, k);
   return [name, n, c, pct(c, n)];
 };
+const rejected = main.filter((r) => r.falseReject).length;
 writeCsv(path.join(OUT, "table1-accuracy.csv"), [
   ["ตัวชี้วัด", "จำนวนที่ประเมิน", "ถูกต้อง", "ความแม่นยำ (%)"],
   row1("ยอดรวม (total)", "totalOk"),
@@ -650,10 +980,15 @@ writeCsv(path.join(OUT, "table1-accuracy.csv"), [
   row1("ชื่อร้าน (merchant)", "merchantOk"),
   row1("ประเภทร้าน (merchant type)", "merchantTypeOk"),
   row1("VAT", "vatOk"),
+  row1("ส่วนลดท้ายบิล (ผลรวม)", "billDiscountOk"),
   row1("OCR อ่านยอดรวมได้ถูก (ก่อนผ่าน AI)", "totalInOcr"),
   ["รายการสินค้า — Precision", items.tp + items.fp, items.tp, (items.p * 100).toFixed(1)],
   ["รายการสินค้า — Recall", items.tp + items.fn, items.tp, (items.r * 100).toFixed(1)],
   ["รายการสินค้า — F1", "-", "-", (items.f1 * 100).toFixed(1)],
+  ["ส่วนลดรายชิ้น — Precision", disc.tp + disc.fp, disc.tp, disc.tp + disc.fp ? (disc.p * 100).toFixed(1) : "-"],
+  ["ส่วนลดรายชิ้น — Recall", disc.tp + disc.fn, disc.tp, disc.tp + disc.fn ? (disc.r * 100).toFixed(1) : "-"],
+  ["ส่วนลดรายชิ้น — F1", "-", "-", disc.tp + disc.fp + disc.fn ? (disc.f1 * 100).toFixed(1) : "-"],
+  ["ระบบปฏิเสธใบที่มีรายการสินค้า (ยิ่งต่ำยิ่งดี)", main.length, rejected, pct(rejected, main.length)],
   ["CER ของข้อความ OCR (ยิ่งต่ำยิ่งดี)", cers.length, "-", cers.length ? fixed(mean(cers)! * 100, 2) : "-"],
   ["เวลา OCR เฉลี่ย (วินาที)", main.length, "-", fixed((mean(main.map((r) => r.ocrMs)) ?? 0) / 1000, 2)],
   ["เวลา AI เฉลี่ย (วินาที)", main.length, "-", fixed((mean(main.map((r) => r.aiMs)) ?? 0) / 1000, 2)],
@@ -702,7 +1037,50 @@ for (const cause of Object.keys(CAUSES) as Cause[]) {
 t4.push(["รวม", allErrors.length, allErrors.length ? "100.0" : "-", "", ""]);
 writeCsv(path.join(OUT, "table4-error-causes.csv"), t4);
 
-console.log(`\nเสร็จแล้ว — ตารางอยู่ใน ${path.relative(process.cwd(), OUT)}/ (ตาราง 1, 2, 4 ใช้ผลที่ ${tableSize}px)`);
+// ตาราง 5 — ชั้นจัดหมวดหมู่
+const cat = categoryScores(main);
+const pctOf = (v: number | null) => (v === null ? "-" : (v * 100).toFixed(1));
+writeCsv(path.join(OUT, "table5-item-categories.csv"), [
+  ["ตัวชี้วัด / หมวด", "จำนวนรายการ", "Precision (%)", "Recall (%)", "F1 (%)"],
+  ["Accuracy (นับตามจำนวนรายการ)", cat.n, "-", "-", pctOf(cat.accuracy)],
+  ["Macro-F1 (เฉลี่ยทุกหมวดเท่ากัน)", cat.n, "-", "-", pctOf(cat.macroF1)],
+  ["Amount-weighted accuracy (ถ่วงด้วยราคาสุทธิ)", cat.n, "-", "-", pctOf(cat.weighted)],
+  [],
+  ...cat.perClass.map((c) => [categoryName(c.id), c.n, pctOf(c.p), pctOf(c.r), pctOf(c.f1)]),
+]);
+const predClasses = [...new Set(cat.pairs.map((p) => p.pred))];
+const cmCols = [...cat.perClass.map((c) => c.id as string | null), ...predClasses.filter((p) => !cat.perClass.some((c) => c.id === p))];
+writeCsv(path.join(OUT, "table5-confusion-matrix.csv"), [
+  ["เฉลย \\ ระบบจัดเป็น", ...cmCols.map(categoryName)],
+  ...cat.perClass.map((c) => [
+    categoryName(c.id),
+    ...cmCols.map((p) => cat.pairs.filter((x) => x.truth === c.id && x.pred === p).length),
+  ]),
+]);
+
+// ตาราง 6 — คะแนนรวมต่อใบ
+const receiptScore = (r: Result, w2: number) =>
+  r.s2 === null ? null : r.s3 === null ? r.s2 : w2 * r.s2 + (1 - w2) * r.s3;
+const summarize = (xs: number[]) => {
+  const m = mean(xs);
+  const s = sd(xs);
+  const half = s === null ? null : (1.96 * s) / Math.sqrt(xs.length);
+  return [xs.length, fixed(m === null ? null : m * 100), fixed(s === null ? null : s * 100),
+    m === null || half === null ? "-" : `${(Math.max(0, m - half) * 100).toFixed(1)} – ${(Math.min(1, m + half) * 100).toFixed(1)}`];
+};
+const scoresAt = (w2: number) => main.map((r) => receiptScore(r, w2)).filter((v): v is number => v !== null);
+const exactRate = rate(main, "exact");
+writeCsv(path.join(OUT, "table6-receipt-score.csv"), [
+  ["ตัวชี้วัดต่อใบ", "จำนวนใบ", "ค่าเฉลี่ย (%)", "SD (%)", "ช่วงความเชื่อมั่น 95% (%)"],
+  ["Exact Match (ถูกทั้งใบ ไม่ต้องแก้)", exactRate.n, pct(exactRate.ok, exactRate.n), "-", "-"],
+  ["S2 ชั้นแยกฟิลด์ (weighted sum)", ...summarize(main.map((r) => r.s2).filter((v): v is number => v !== null))],
+  ["S3 ชั้นจัดหมวด (amount-weighted)", ...summarize(main.map((r) => r.s3).filter((v): v is number => v !== null))],
+  [`คะแนนรวม ${LAYER_WEIGHTS.s2} S2 + ${LAYER_WEIGHTS.s3} S3`, ...summarize(scoresAt(LAYER_WEIGHTS.s2))],
+  ["Sensitivity: 0.5 S2 + 0.5 S3", ...summarize(scoresAt(0.5))],
+  ["Sensitivity: 0.75 S2 + 0.25 S3", ...summarize(scoresAt(0.75))],
+]);
+
+console.log(`\nเสร็จแล้ว — ตารางอยู่ใน ${path.relative(process.cwd(), OUT)}/ (ตาราง 1, 2, 4, 5, 6 ใช้ผลที่ ${tableSize}px, ${main.length} ใบ)`);
 if (apiErrors || aborted) {
   console.log(
     `⚠️ ยังประเมินไม่ครบ (API ไม่สำเร็จ ${apiErrors} ครั้ง${aborted ? ", หยุดกลางทาง" : ""}) — ` +
