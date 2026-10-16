@@ -245,7 +245,7 @@ export type ScanConfidence = {
 
 /** เอกสารที่ระบบไม่รองรับ — backend ตัดสินจากผลที่ AI อ่าน (ดู receipts.support.ts) */
 export type Unsupported = {
-  kind: "transfer_slip" | "handwritten" | "not_receipt";
+  kind: "transfer_slip" | "handwritten" | "not_receipt" | "no_items";
   title: string;
   message: string;
 };

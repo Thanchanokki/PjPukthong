@@ -6,6 +6,7 @@ const ICON: Record<Unsupported["kind"], string> = {
   transfer_slip: "🏦",
   handwritten: "✍️",
   not_receipt: "🖼️",
+  no_items: "🧾",
 };
 
 /**
@@ -60,7 +61,7 @@ export function UnsupportedDialog({
           </button>
           {/* รูปที่ไม่ใช่ใบเสร็จไม่มีอะไรให้กรอกต่อ แต่ยังปิดดูรูปได้ */}
           <button onClick={onContinue} className="btn-ghost w-full">
-            {info.kind === "not_receipt" ? "ปิด" : "กรอกเองต่อ"}
+            {info.kind === "not_receipt" ? "ปิด" : info.kind === "no_items" ? "เพิ่มรายการเอง" : "กรอกเองต่อ"}
           </button>
         </div>
       </div>
