@@ -70,7 +70,7 @@ import { parseDraft } from "../modules/receipts/receipts.schema.js";
 import { unsupportedReason } from "../modules/receipts/receipts.support.js";
 import { SYSTEM_CATEGORIES, matchCategory } from "../shared/categories.js";
 import { normalizeKind } from "../shared/discounts.js";
-import { MERCHANT_TYPES, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
+import { MERCHANT_TYPES, categoryForItem, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
 import { Decimal } from "../shared/money.js";
 
 const ROOT = path.resolve("evaluation");
@@ -93,6 +93,8 @@ const runs = Number(arg("runs") ?? 1);
 const limit = arg("limit") ? Number(arg("limit")) : Infinity;
 const resume = process.argv.includes("--resume");
 const checkOnly = process.argv.includes("--check");
+/** --only=IMG_1.JPG,IMG_2.JPG ประเมินใหม่เฉพาะใบเหล่านี้ (ทับผลเดิม) ใบอื่นใช้ผลที่เก็บไว้ */
+const only = arg("only")?.split(",").map((s) => s.trim()).filter(Boolean) ?? null;
 /** API ล้มติดกันเท่านี้ครั้ง = มีปัญหาฝั่งผู้ให้บริการ หยุดก่อนจะเปลืองโควตา (รันต่อด้วย --resume) */
 const MAX_CONSECUTIVE_API_ERRORS = 5;
 
@@ -214,6 +216,7 @@ export const CAUSES = {
   nullValue: "ไม่ได้ค่ากลับมา (อ่านไม่ออก)",
   year: "อ่านปีผิด (วัน/เดือนถูก)",
   swap: "สลับวันกับเดือน",
+  discountPlacement: "ส่วนลดรายชิ้นไม่ผูกกับสินค้า (AI ย้ายไปเป็นส่วนลดท้ายบิล)",
 } as const;
 type Cause = keyof typeof CAUSES;
 
@@ -297,6 +300,8 @@ type Item = {
   discount: string | null;
   net: string;
   category: string | null;
+  /** หมวดที่ AI จัดเอง ก่อนใช้กฎหมวดตามประเภทร้าน — เก็บไว้ให้เปลี่ยนกฎแล้วคิดใหม่ได้โดยไม่เรียก API */
+  guess?: string | null;
 };
 type BillDiscount = { kind: string; amount: string };
 
@@ -369,10 +374,11 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     const guess = item.category_guess;
     item.category_guess = categoryId(guess ?? "") ?? categoryId(guess?.split(">").pop() ?? "") ?? null;
   }
+  const guesses = new Map(d.line_items.map((i) => [i, i.category_guess]));
   if (d.merchant_type) {
     const type = merchantTypeOf(d.merchant_type);
     if (type.noItems) d.line_items = [];
-    else if (type.defaultCategory) for (const item of d.line_items) item.category_guess = type.defaultCategory;
+    else for (const item of d.line_items) item.category_guess = categoryForItem(type, item.category_guess);
   }
   return {
     total: money(d.total),
@@ -380,19 +386,29 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     merchant: d.merchant_name,
     merchantType: d.merchant_type,
     vat: money(d.vat_amount),
-    items: d.line_items
-      .map((i) => ({
+    items: d.line_items.flatMap((i): Item[] => {
+      const net = money(i.amount);
+      if (net === null) return [];
+      return [{
         gross: money(i.gross_amount),
         discount: money(i.discount),
-        net: money(i.amount),
+        net,
         category: i.category_guess,
-      }))
-      .filter((i): i is Item => i.net !== null),
+        guess: guesses.get(i) ?? null,
+      }];
+    }),
     billDiscounts: d.bill_discounts
       .map((b) => ({ kind: b.kind as string, amount: money(b.amount) }))
       .filter((b): b is BillDiscount => b.amount !== null),
     unsupported: unsupportedReason(d)?.kind ?? null,
   };
+}
+
+/** ใช้กฎหมวดตามประเภทร้านชุดปัจจุบันกับหมวดที่ AI จัดไว้ (ผลรุ่นที่ยังไม่เก็บ guess ใช้ค่าเดิม) */
+function withCurrentRule(snap: Snapshot): Snapshot {
+  if (!snap.merchantType || snap.items.some((i) => i.guess === undefined)) return snap;
+  const type = merchantTypeOf(snap.merchantType);
+  return { ...snap, items: snap.items.map((i) => ({ ...i, category: categoryForItem(type, i.guess ?? null) })) };
 }
 
 // ------------------------------------------------------------------ ให้คะแนน
@@ -437,6 +453,8 @@ type Result = Scores & {
   aiMs: number;
   /** ขนาดไฟล์ภาพที่ทดสอบ (หลังย่อ ก่อนเข้า OCR) */
   ocrKb: number;
+  /** OCR ล้ม (timeout ฯลฯ) แล้ว AI อ่านจากรูปอย่างเดียว — แบบเดียวกับ readText ในแอป */
+  ocrError?: string | null;
   snap: Snapshot | null;
 };
 
@@ -506,7 +524,25 @@ function score(t: Truth, s: Snapshot, ocrText: string): Scores {
   // ---- รายการสินค้า (ชั้น 2)
   const { pairs, missing, extra } = matchItems(t.itemList, s.items);
   const extraLeft = [...extra];
+  // ส่วนลดที่ AI แยกออกจากสินค้าไปไว้ท้ายบิล — ระบบได้สินค้าเป็นราคาเต็ม ส่วนลดไปอยู่ท้ายบิล
+  // ยอดรวมยังถูก แต่ถ้าไม่แยกกรณีนี้ จะถูกนับเป็น "OCR อ่านตัวเลขผิด" (59.00 กับ 69.00 ต่างกันหลักเดียว)
+  // นับ P/R/F1 ตามราคาสุทธิเหมือนเดิม (สุทธิผิดจริง) — แค่จัดสาเหตุให้ถูก
+  const unexplained = [...missing];
+  let movedDiscount = new Decimal(0);
   for (const v of missing) {
+    if (!v.discount) continue;
+    const idx = extraLeft.findIndex((p) => p.net === v.gross && !p.discount);
+    if (idx < 0) continue;
+    extraLeft.splice(idx, 1);
+    unexplained.splice(unexplained.indexOf(v), 1);
+    movedDiscount = movedDiscount.plus(v.discount);
+    errors.push({ field: "ส่วนลดรายชิ้น", cause: "discountPlacement", truth: `${v.gross}-${v.discount}`, pred: `${v.gross} (ส่วนลดอยู่ท้ายบิล)` });
+  }
+  if (movedDiscount.gt(0)) {
+    const bill = errors.find((e) => e.field === "ส่วนลดท้ายบิล");
+    if (bill && new Decimal(bill.pred).minus(bill.truth).eq(movedDiscount)) bill.cause = "discountPlacement";
+  }
+  for (const v of unexplained) {
     // จับคู่ค่าที่อ่านผิดได้ครั้งเดียว — ค่าที่ถูกใช้อธิบายรายการหนึ่งแล้วไม่นับเป็น "เกิน" อีก
     const idx = extraLeft.findIndex((p) => digitConfusion(v.net, p.net));
     const confused = idx >= 0 ? extraLeft.splice(idx, 1)[0] : undefined;
@@ -632,6 +668,8 @@ const TRUTH_TYPE_LABEL: Record<string, string> = {
   gift: "ร้านของขวัญ",
   home_goods: "ของใช้ในบ้าน",
   entertainment: "บันเทิง",
+  stationery: "เครื่องเขียน/หนังสือ",
+  utilities: "ค่าน้ำ/ค่าไฟ",
 };
 
 // ------------------------------------------------------------------ ประเมินทีละใบ
@@ -671,9 +709,18 @@ async function evaluate(t: Truth, run: number, size: number): Promise<Result> {
   let payload: Record<string, unknown> | null;
   let ocrMs = 0;
   let aiMs = 0;
+  let ocrError: string | null = null;
   try {
     let t0 = Date.now();
-    ocrText = await withRetry(() => requestOcr(prepared));
+    // แอปจริง (readText) กลืน error ของ OCR แล้วให้ AI อ่านจากรูปอย่างเดียว — ประเมินแบบเดียวกัน
+    // ผลจึงตรงกับที่ผู้ใช้ได้ ยกเว้นโควตาหมด ซึ่งต้องหยุดทั้งชุด
+    try {
+      ocrText = await withRetry(() => requestOcr(prepared));
+    } catch (err) {
+      if (err instanceof Error && err.message === DAILY_LIMIT) throw err;
+      ocrError = err instanceof Error ? err.message : String(err);
+      console.log(`    OCR ไม่สำเร็จ (${ocrError}) — ให้ AI อ่านจากรูปอย่างเดียวเหมือนในแอป`);
+    }
     ocrMs = Date.now() - t0;
     t0 = Date.now();
     ({ payload } = await withRetry(() => extractReceipt(stored, ocrText || null, categoryList)));
@@ -697,6 +744,7 @@ async function evaluate(t: Truth, run: number, size: number): Promise<Result> {
     ocrMs,
     aiMs,
     ocrKb: Math.round(stored.length / 1024),
+    ocrError,
     snap,
   };
 }
@@ -856,13 +904,18 @@ const done0 = resume
       return inTruthFiles.has(file) && sizes.includes(Number(size)) && Number(run) <= runs;
     }).length
   : 0;
-const todo = runCount - done0;
+const todo = only ? only.length * sizes.length * runs : runCount - done0;
+const unknownOnly = (only ?? []).filter((f) => !inTruthFiles.has(f));
+if (unknownOnly.length) {
+  console.error(`--only มีชื่อไฟล์ที่ไม่อยู่ในเฉลย: ${unknownOnly.join(", ")}`);
+  process.exit(1);
+}
 if (legacy.length) {
   console.log(`ℹ️ ผลรุ่นก่อน ${legacy.length} ครั้งไม่ถูกนับ (ระบบรุ่นเก่า ไม่มีข้อมูลส่วนลด/หมวดรายชิ้น) — ต้องประเมินใหม่`);
 }
 console.log(
   `ประเมิน ${truths.length} ใบ × ${sizes.length} ขนาด × ${runs} รอบ = ${runCount} ครั้ง` +
-    (resume ? ` (ผ่านแล้ว ${done0}, เหลือ ${todo})` : "") +
+    (only ? ` (ประเมินใหม่เฉพาะ ${only.length} ใบ)` : resume ? ` (ผ่านแล้ว ${done0}, เหลือ ${todo})` : "") +
     ` — จะเรียก API ประมาณ ${todo * 2} ครั้ง`,
 );
 
@@ -874,7 +927,13 @@ outer: for (let run = 1; run <= runs; run++) {
   for (const size of sizes) {
     for (const t of truths) {
       done++;
-      const cached = resume ? store.get(keyOf({ file: t.file, size, run })) : undefined;
+      const key = keyOf({ file: t.file, size, run });
+      if (only && !only.includes(t.file)) {
+        const kept = store.get(key);
+        if (kept) results.push(kept);
+        continue;
+      }
+      const cached = resume && !only ? store.get(key) : undefined;
       if (cached) {
         results.push(cached);
         continue;
@@ -922,7 +981,8 @@ const cumulative: Result[] = [...store.values()]
   .filter((r) => truthByFile.has(r.file) && r.snap)
   .map((r) => {
     const text = existsSync(ocrFile(r)) ? readFileSync(ocrFile(r), "utf8") : "";
-    return { ...r, ...score(truthByFile.get(r.file)!, r.snap!, text) };
+    const snap = withCurrentRule(r.snap!);
+    return { ...r, snap, ...score(truthByFile.get(r.file)!, snap, text) };
   });
 const ok = cumulative.filter((r) => !r.apiError);
 const ranSizes = [...new Set(ok.map((r) => r.size))].sort((a, b) => a - b);
@@ -973,6 +1033,7 @@ const row1 = (name: string, k: RateKey) => {
   return [name, n, c, pct(c, n)];
 };
 const rejected = main.filter((r) => r.falseReject).length;
+const ocrFailed = main.filter((r) => r.ocrError).length;
 writeCsv(path.join(OUT, "table1-accuracy.csv"), [
   ["ตัวชี้วัด", "จำนวนที่ประเมิน", "ถูกต้อง", "ความแม่นยำ (%)"],
   row1("ยอดรวม (total)", "totalOk"),
@@ -989,6 +1050,7 @@ writeCsv(path.join(OUT, "table1-accuracy.csv"), [
   ["ส่วนลดรายชิ้น — Recall", disc.tp + disc.fn, disc.tp, disc.tp + disc.fn ? (disc.r * 100).toFixed(1) : "-"],
   ["ส่วนลดรายชิ้น — F1", "-", "-", disc.tp + disc.fp + disc.fn ? (disc.f1 * 100).toFixed(1) : "-"],
   ["ระบบปฏิเสธใบที่มีรายการสินค้า (ยิ่งต่ำยิ่งดี)", main.length, rejected, pct(rejected, main.length)],
+  ["OCR ล้มเหลว — AI อ่านจากรูปอย่างเดียว (ยิ่งต่ำยิ่งดี)", main.length, ocrFailed, pct(ocrFailed, main.length)],
   ["CER ของข้อความ OCR (ยิ่งต่ำยิ่งดี)", cers.length, "-", cers.length ? fixed(mean(cers)! * 100, 2) : "-"],
   ["เวลา OCR เฉลี่ย (วินาที)", main.length, "-", fixed((mean(main.map((r) => r.ocrMs)) ?? 0) / 1000, 2)],
   ["เวลา AI เฉลี่ย (วินาที)", main.length, "-", fixed((mean(main.map((r) => r.aiMs)) ?? 0) / 1000, 2)],
