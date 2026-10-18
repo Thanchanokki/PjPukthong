@@ -33,6 +33,7 @@ import {
   updateProfile as updateProfileRequest,
   uploadAvatar as uploadAvatarRequest,
 } from "./api";
+import { BUDGET_ALERT_KEY } from "./budget";
 
 type AuthValue = {
   user: AuthUser | null;
@@ -67,6 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(() => {
     clearToken();
+    // ให้ป๊อปอัพเตือนงบเด้งอีกครั้งเมื่อเข้าสู่ระบบรอบหน้า
+    try {
+      for (const k of Object.keys(sessionStorage)) {
+        if (k.startsWith(BUDGET_ALERT_KEY)) sessionStorage.removeItem(k);
+      }
+    } catch {
+      // storage ถูกปิด — ไม่มีอะไรให้ล้าง
+    }
     // ลำดับสำคัญ: ล้าง state ก่อน แล้วค่อยล้าง cache
     // ไม่งั้น query ["me"] อาจถูกยิงซ้ำด้วย token ที่เพิ่งถูกลบไป
     setTokenState(null);
