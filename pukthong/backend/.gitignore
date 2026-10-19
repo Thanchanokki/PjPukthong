@@ -18,7 +18,8 @@ test-receipts/
 
 # ชุดทดสอบความแม่นยำ OCR — รูปและเฉลยจริงมีข้อมูลส่วนตัว เก็บไว้ในเครื่องเท่านั้น
 # (ขึ้น git ได้เฉพาะไฟล์ตัวอย่าง *.example.csv และตารางสรุปใน results/)
-evaluation/images/
-evaluation/truth-text/
-evaluation/ground-truth.csv
-evaluation/results/raw/
+# (รวมชุดอื่นที่ใช้ --dir=evaluation-xxx ด้วย)
+evaluation*/images/
+evaluation*/truth-text/
+evaluation*/ground-truth.csv
+evaluation*/results/raw/

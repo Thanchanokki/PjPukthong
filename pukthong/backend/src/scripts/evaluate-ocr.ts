@@ -8,6 +8,7 @@
  *   npm run evaluate -- --sizes=... --resume # รันต่อเฉพาะครั้งที่ยังไม่ผ่าน (API ล้มกลางทาง)
  *   npm run evaluate -- --sizes=1200 --resume --table-size=1200   # ทำตารางจากผลที่มี ไม่เรียก API
  *   npm run evaluate -- --check              # ตรวจรูปแบบเฉลยอย่างเดียว ไม่เรียก API
+ *   npm run evaluate -- --dir=evaluation-slides   # ใช้ชุดทดสอบอื่น (โครงสร้างโฟลเดอร์เหมือน evaluation/)
  *
  * อินพุต (อยู่ใน evaluation/ — ห้าม commit รูปและเฉลยจริง ดู .gitignore):
  *   images/<file>                รูปใบเสร็จต้นฉบับ
@@ -73,7 +74,12 @@ import { normalizeKind } from "../shared/discounts.js";
 import { MERCHANT_TYPES, categoryForItem, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
 import { Decimal } from "../shared/money.js";
 
-const ROOT = path.resolve("evaluation");
+const arg = (name: string) =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
+
+/** --dir=evaluation-slides ใช้ชุดทดสอบอื่น (รูป เฉลย และผลแยกโฟลเดอร์กัน) ค่าเริ่มต้น = evaluation */
+const ROOT = path.resolve(arg("dir") ?? "evaluation");
+const ROOT_NAME = path.relative(process.cwd(), ROOT);
 const OUT = path.join(ROOT, "results");
 const RAW = path.join(OUT, "raw");
 /** ขนาดที่แอปใช้จริง — ตาราง 1, 2, 4, 5, 6 ใช้ผลที่ขนาดนี้ */
@@ -86,8 +92,6 @@ const RESULT_VERSION = 2;
 
 // ------------------------------------------------------------------ CLI
 
-const arg = (name: string) =>
-  process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
 const sizes = (arg("sizes") ?? String(PRODUCTION_SIZE)).split(",").map(Number);
 const runs = Number(arg("runs") ?? 1);
 const limit = arg("limit") ? Number(arg("limit")) : Infinity;
@@ -831,7 +835,7 @@ function groupTable(rs: Result[], key: "merchantType" | "condition", label: stri
 const truthFile = path.join(ROOT, "ground-truth.csv");
 if (!existsSync(truthFile)) {
   console.error(
-    `ไม่พบ ${truthFile}\nคัดลอก evaluation/ground-truth.example.csv เป็น ground-truth.csv แล้วกรอกเฉลยของรูปใน evaluation/images/`,
+    `ไม่พบ ${truthFile}\nคัดลอก evaluation/ground-truth.example.csv เป็น ${ROOT_NAME}/ground-truth.csv แล้วกรอกเฉลยของรูปใน ${ROOT_NAME}/images/`,
   );
   process.exit(1);
 }
@@ -847,7 +851,7 @@ for (const row of rows) {
   if (!money(row.total)) problems.push(`${row.file}: total ต้องเป็นตัวเลข`);
   if (row.date && !/^\d{4}-\d{2}-\d{2}$/.test(row.date))
     problems.push(`${row.file}: date ต้องเป็น YYYY-MM-DD (หรือเว้นว่างถ้าบนใบอ่านวันที่ไม่ออก)`);
-  if (!existsSync(path.join(ROOT, "images", row.file))) problems.push(`${row.file}: ไม่พบรูปใน evaluation/images/`);
+  if (!existsSync(path.join(ROOT, "images", row.file))) problems.push(`${row.file}: ไม่พบรูปใน ${ROOT_NAME}/images/`);
   const t = parseTruth(row);
   if (typeof t === "string") problems.push(`${row.file}: ${t}`);
   else {
