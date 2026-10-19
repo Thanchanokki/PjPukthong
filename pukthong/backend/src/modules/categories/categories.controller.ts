@@ -58,6 +58,8 @@ export default async function categoriesController(app: FastifyInstance) {
       icon: t.icon,
       // ฟอร์มใช้ตั้งหมวดของทุกรายการเมื่อผู้ใช้เปลี่ยนประเภทร้าน (null = จัดรายชิ้น)
       default_category_id: t.defaultCategory,
+      // หมวดที่รายการในร้านนี้เลือกได้เองโดยไม่ถูกตั้งกลับเป็นหมวดเริ่มต้น (ร้านอาหาร: อาหาร/เครื่องดื่ม)
+      item_category_ids: t.itemCategories ?? [],
       no_items: t.noItems ?? false,
     })),
   );

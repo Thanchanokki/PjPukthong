@@ -1,0 +1,51 @@
+﻿file,merchant_type,condition,merchant,date,total,vat,items,bill_discounts,item_categories,note
+IMG_3996.JPG,clothing,ปกติ,H&M เซ็นทรัลขอนแก่น,2026-02-12,1197.00,78.31,699.00|129.00-26.54|249.00-51.23|249.00-51.23,,apparel|apparel|apparel|apparel,
+IMG_4028.JPG,cafe,ปกติ,From Scratch ขอนแก่น,2026-10-04,155.00,10.14,75.00|80.00,,drinks|food,
+IMG_4039.JPG,convenience,ปกติ,CJ More สาขาถนนอดุลยาราม,2026-08-22,154.00,10.07,258.00-129.00|25.00|0.00,,personal|health|other,
+IMG_4040.JPG,restaurant,ปกติ,พินรี หมี่ไก่ฉีก สาขาหลังมอ,2026-01-19,75.00,0.00,75.00,,food,
+IMG_4041.JPG,restaurant,ปกติ,พินรี หมี่ไก่ฉีก สาขาหลังมอ,2026-01-20,65.00,0.00,65.00,,food,
+IMG_4042.JPG,cafe,ปกติ,SHUYI เซ็นทรัลขอนแก่น,2026-01-15,60.00,3.93,60.00,,drinks,
+IMG_4043.JPG,beauty,ปกติ,Watsons,2026-01-17,29.00,1.90,29.00,,personal,
+IMG_4044.JPG,beauty,ซีดจาง,เจ๊หมวย บิวตี้ ช็อป โนนม่วง ขอนแก่น,2026-01-11,227.00,0.00,139.00|35.00|36.00|17.00,,personal|personal|personal|personal,
+IMG_4045.JPG,beauty,ซีดจาง,เจ๊หมวย บิวตี้ ช็อป โนนม่วง ขอนแก่น,2026-01-15,22.00,0.00,22.00,,personal,
+IMG_4046.JPG,beauty,ซีดจาง,เจ๊หมวย บิวตี้ ช็อป โนนม่วง ขอนแก่น,,90.00,0.00,45.00|45.00,,personal|personal,
+IMG_4448.JPG,convenience,ปกติ,7-Eleven (15632),2026-10-13,59.00,3.86,17.00|25.00|20.00-3.00,,drinks|food|food,
+IMG_4449.JPG,convenience,ปกติ,CJ More สาขาถนนอดุลยาราม,2026-10-12,86.00,5.63,20.00|7.00|59.00,,food|drinks|food,
+IMG_4450.JPG,wholesale,ซีดจาง,Makro (CP Axtra),2025-09-18,442.25,24.14,232.00|49.00|49.00|39.00|73.25,,food|food|food|food|food,
+IMG_4451.JPG,convenience,ปกติ,CJ More สาขาถนนหลังมอ ขอนแก่น,2026-10-05,157.00,10.27,39.00|59.00|69.00-10.00,,food|food|food,
+IMG_4452.JPG,restaurant,ปกติ,ทองสมิทธิ์ เซ็นทรัลลาดพร้าว,2026-10-10,830.50,54.33,50.00|50.00|398.00|199.00|58.00|75.50,,food|food|food|food|food|food,
+IMG_4453.JPG,convenience,เสียหาย,7-Eleven,,75.00,4.91,15.00|11.00|20.00|29.00,,food|drinks|drinks|food,
+IMG_4454.JPG,restaurant,ปกติ,Bester steak by สเต๊กลุงเดฟ,2026-10-06,207.00,0.00,10.00|59.00|69.00|69.00,,drinks|food|food|food,
+IMG_4455.JPG,supermarket,ปกติ,Gourmet Market MRT ลาดพร้าว,2026-10-11,7.00,0.46,7.00,,food,
+IMG_4456.JPG,beauty,ปกติ,Eveandboy ซีคอนสแควร์,2026-10-08,558.00,36.50,439.00|119.00|0.00,,personal|personal|other,
+IMG_4457.JPG,rent,ปกติ,Golden View Resort,2026-09-26,5256.00,0.00,4300.00|200.00|756.00,,housing|housing|housing,
+IMG_4460.JPG,fast_food,ปกติ,KFC MRT ลาดพร้าว,2026-10-11,39.00,2.55,39.00,,food,
+IMG_4461.JPG,sports,ปกติ,Supersports เซ็นทรัลลาดพร้าว,2026-10-10,3034.00,198.49,350.00|2384.00|300.00,,apparel|apparel|apparel,
+IMG_4462.JPG,wholesale,ซีดจาง,Makro (CP Axtra),2025-09-18,674.00,35.72,128.00|109.00|351.00|86.00,,food|food|food|food,
+IMG_4463.JPG,gift,ปกติ,Kamika ซีคอนสแควร์,2026-10-08,312.00,20.41,45.00|39.00|99.00|129.00,,other|other|other|other,
+IMG_4464.JPG,medical,ปกติ,โรงพยาบาลศรีนครินทร์ ขอนแก่น,2026-09-02,1314.00,0.00,64.00|1200.00|50.00,,health|health|health,
+IMG_4465.JPG,home_goods,ปกติ,MR. D.I.Y. ขอนแก่น,2026-09-16,49.00,3.21,21.00|28.00,,household|household,
+IMG_6206.JPG,cafe,ปกติ,From Scratch ขอนแก่น,2026-10-04,75.00,4.91,75.00,,drinks,
+IMG_6207.JPG,entertainment,ปกติ,EGV ขอนแก่น,2026-09-30,85.00,5.56,85.00|0.00,,entertainment|other,
+IMG_6208.JPG,beauty,ปกติ,เจ๊หมวย บิวตี้ ช็อป โนนม่วง ขอนแก่น,2026-02-01,132.00,0.00,25.00|29.00|39.00|39.00,,personal|personal|personal|personal,
+IMG_6209.JPG,clothing,ปกติ,Gentlewoman เซ็นทรัลขอนแก่น,2024-10-02,590.00,38.60,590.00,,apparel,
+IMG_6210.JPG,accessories,ปกติ,ร้าน 11Khonkaen (โลโก้ EWW?),2026-09-19,68.00,0.00,39.00|29.00,,apparel|apparel,
+IMG_6211.JPG,beauty,ปกติ,Watsons โนนม่วง,2026-09-19,178.05,11.65,130.00|19.00-0.95|19.00-19.00|79.00-49.00|0.00,,personal|personal|personal|personal|other,
+IMG_6214.JPG,cafe,ปกติ,จ่ำบ๊ะ นมสด โคลัมโบ มข.,2026-08-24,397.00,0.00,39.00|49.00|45.00|65.00|35.00|29.00|45.00|90.00,,drinks|drinks|drinks|drinks|drinks|drinks|drinks|drinks,
+IMG_6215.JPG,clothing,ปกติ,H&M เซ็นทรัลขอนแก่น,2026-01-15,699.00,45.73,699.00|2.00-2.00,,apparel|other,
+IMG_4619.jpg,supermarket,ปกติ,Tops ขอนแก่นแคมปัส,2026-10-15,12.00,0.79,12.00,,drinks,VAT รวมในราคา ไม่ระบุยอด VAT คำนวณเอง
+IMG_4620.JPG,cafe,ปกติ,Mister Donut เซ็นทรัลขอนแก่นแคมปัส,2026-10-15,55.00,3.60,55.00,,drinks,VAT รวมในราคา ไม่ระบุยอด VAT คำนวณเอง
+IMG_4621.JPG,cafe,ปกติ,ChaTraMue (ชาตรามือ) เซ็นทรัลขอนแก่นแคมปัส,2026-10-15,65.00,4.25,50.00|15.00,,drinks|drinks,GrabFood GF264T; ท็อปปิ้งวิปชีส 15 นับเป็นเครื่องดื่ม
+IMG_4625.JPG,stationery,ปกติ,B2S ซีพีเอ็นขอนแก่นแคมปัส,2026-10-15,41.00,2.68,26.00|15.00,,education|education,เทปย่น + ดินสอไม้; VAT รวมในราคา ไม่ระบุยอด VAT คำนวณเอง
+IMG_4629.JPG,accessories,ปกติ,Wanteedee เซ็นทรัลแคมปัส ชั้น G,2026-10-15,270.00,0.00,200.00|100.00,30.00,apparel|personal,ส่วนลดนักเรียนนักศึกษา 30; ต่างหู 200 + เจาะหู 100 (บริการ)
+IMG_4632.JPG,fast_food,ปกติ,KFC เซ็นทรัลขอนแก่นแคมปัส,2026-10-15,237.00,15.50,39.00|59.00|139.00,,food|food|food,Value Meal #3 รวมเป๊ปซี่ จัดเป็นอาหาร; VAT รวมในราคา คำนวณเอง
+IMG_4636.jpg,restaurant,ปกติ,Bar B Q Plaza,2026-10-15,864.00,56.52,275.00|147.00|129.00|35.00|49.00|49.00|98.00|199.00,68.00|49.00,food|drinks|food|food|food|food|food|food,ส่วนลด Buddy 10% Online Payment 68 + เติมฟินรีฟิล ซื้อ 1 แถม 1 49
+IMG_4637.JPG,beauty,ปกติ,Beautrium เซ็นทรัลขอนแก่นแคมปัส,2026-10-15,99.00,6.50,109.00-59.50|109.00-59.50|1.00-1.00,,personal|personal|other,Benice 2F99 (โปร 2 ชิ้น 99) + ถุงพลาสติก; ประหยัดรวม 120
+IMG_4684.JPG,cafe,ปกติ,Loaf hause กังสดาล,2026-10-16,90.00,0.00,90.00,,drinks,โกโก้คาราเมล หวานน้อย นมสด; ไม่ระบุ VAT
+IMG_4685.JPG,cafe,ปกติ,Loaf hause กังสดาล,2026-10-16,85.00,0.00,85.00,,drinks,เคลียร์มัทฉะ หวานน้อย; ไม่ระบุ VAT
+fifah.JPG,utilities,ปกติ,การไฟฟ้าส่วนภูมิภาค อ.ธาตุพนม (PEA),2026-09-17,1512.12,98.92,600.00|727.72|24.62|60.86|98.92,,housing|housing|housing|housing|housing,ใบแจ้งค่าไฟ (ไม่ใช่ใบเสร็จ) รอบบิล 09/2569 ใช้ 375 หน่วย; ครบกำหนดชำระ 2026-09-26
+IMG_4691.JPG,convenience,ปกติ,7-Eleven ซอยเกษียรสินธุ์ (15632),2026-10-13,59.00,3.86,17.00|25.00|20.00-3.00,,drinks|food|food,วันที่บนบิล 13/10/69 (พ.ศ.) แปลงเป็น 2026-10-13; M-Stamp 6 แต้ม ไม่นับเป็นรายการ; VAT รวมในราคา คำนวณเอง
+IMG_4692.JPG,beauty,ปกติ,Watsons โนนม่วง,2026-10-16,527.00,34.47,165.00|100.00|12.00|12.00|139.00|239.00|0.00,points:140.00,personal|personal|personal|personal|personal|personal|other,ใช้แต้มแลกส่วนลด 120 + 20; ไม่เห็นวันที่บนบิล ใส่ 2026-10-16 เป็นค่าประมาณ ควรเช็ก
+IMG_4693.PNG,convenience,ปกติ,7-Eleven โนนม่วงวิลเลจ (18660),2026-10-05,90.00,5.89,29.00|22.00|19.00|25.00-5.00,,food|food|food|food,สกรีนช็อตจากแอป 7App; วันที่ 05/10/69 (พ.ศ.) แปลงเป็น 2026-10-05; ไม่ระบุยอด VAT คำนวณเอง
+IMG_4694.PNG,convenience,ปกติ,7-Eleven สาขาอดุลซิตี้ (13571),2026-10-04,203.00,13.28,20.00|40.00|117.00|36.00-10.00,,food|food|personal|personal,สกรีนช็อตจากแอป 7App; ผ้าอนามัย 3 ชิ้น + ทรีทเมนต์ซอง 3 ซอง; ไม่ระบุยอด VAT คำนวณเอง
+add.JPEG,rent,ปกติ,NP PARK (ห้อง 316),2026-09-28,5158.00,0.00,4200.00|808.00|150.00,,housing|housing|housing,ใบแจ้งหนี้ค่าเช่าห้องพัก ประจำเดือนกันยายน; ค่าไฟ 101 หน่วย x 8 = 808; ค่าน้ำขั้นต่ำ 150 (ใช้ 4 หน่วย ไม่ถึง 150 บาท); ไม่ใช่ใบเสร็จ

@@ -18,9 +18,15 @@ export interface MerchantType extends Matchable {
    * หมวดสินค้าเริ่มต้นของร้านประเภทนี้ (CategoryDoc._id) — null = ร้านขายของปนกัน ให้ AI จัดทีละชิ้น
    *
    * มีค่า = ทุกรายการในใบถูกตั้งเป็นหมวดนี้ทันที (ผู้ใช้แก้รายชิ้นได้ในหน้าตรวจ)
-   * เช่น ใบ Starbucks ทุกรายการเป็น "อาหาร" แม้จะเป็นกาแฟก็ตาม — ตามสเปกของโปรเจกต์
+   * เช่น ใบ H&M ทุกรายการเป็น "ช้อปปิ้ง"
    */
   defaultCategory: string | null;
+  /**
+   * หมวดที่ AI จัดรายชิ้นได้ในร้านประเภทนี้ — รายการที่ AI จัดเป็นหมวดอื่น (หรือไม่ได้จัด)
+   * ใช้ defaultCategory แทน เช่น ร้านอาหาร: ชาเขียว -> เครื่องดื่ม, ข้าวผัด -> อาหาร
+   * ไม่ระบุ = ทุกรายการเป็น defaultCategory
+   */
+  itemCategories?: string[];
   /** ใบประเภทนี้ไม่มีรายการสินค้า (ใบเสร็จค่าเบี้ยประกัน) — เก็บข้อมูลกรมธรรม์แทน */
   noItems?: boolean;
 }
@@ -53,6 +59,7 @@ export const MERCHANT_TYPES: MerchantType[] = [
     hint: "MK, S&P, Café Amazon, Starbucks, ฟู้ดคอร์ท, ร้านอาหาร, ร้านกาแฟ, ร้านชานม, เบเกอรี่, ฟาสต์ฟู้ด",
     aliases: ["ร้านอาหาร/คาเฟ่", "ร้านอาหาร", "คาเฟ่", "ร้านกาแฟ", "cafe", "fast_food"],
     defaultCategory: "food",
+    itemCategories: ["food", "drinks"],
   },
   {
     id: "pharmacy",
@@ -101,7 +108,7 @@ export const MERCHANT_TYPES: MerchantType[] = [
     name: "บิลและบริการ",
     icon: "🧾",
     hint: "Counter Service, ไปรษณีย์, การประปา, การไฟฟ้า, ค่าโทรศัพท์/อินเทอร์เน็ต, ค่าเช่าหอพัก",
-    aliases: ["ที่พัก/ค่าเช่า/บิล", "บิล", "ค่าเช่า", "housing_bills", "rent"],
+    aliases: ["ที่พัก/ค่าเช่า/บิล", "บิล", "ค่าเช่า", "housing_bills", "rent", "utilities"],
     defaultCategory: "housing",
   },
   {
@@ -137,3 +144,15 @@ export const matchMerchantType = (value: unknown) => matchCategory(value, MERCHA
 /** รายการสำหรับแปะลง prompt ของ AI */
 export const merchantTypePrompt = () =>
   MERCHANT_TYPES.map((t) => `${t.id} = ${t.name} (${t.hint})`).join("\n  ");
+
+/**
+ * หมวดของรายการหนึ่งในร้านประเภทนี้ จากหมวดที่ AI จัดมา (guess)
+ * - ร้านขายของปนกัน (ไม่มี defaultCategory): ใช้หมวดที่ AI จัดตามเดิม
+ * - ร้านที่จัดรายชิ้นได้บางหมวด (itemCategories): ใช้หมวดที่ AI จัดถ้าอยู่ในชุดนั้น ไม่งั้นใช้หมวดเริ่มต้น
+ * - ร้านอื่น: หมวดเริ่มต้นของร้านทุกรายการ
+ */
+export function categoryForItem(type: MerchantType, guess: string | null): string | null {
+  if (!type.defaultCategory) return guess;
+  if (guess && type.itemCategories?.includes(guess)) return guess;
+  return type.defaultCategory;
+}

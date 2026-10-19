@@ -103,13 +103,15 @@ export function draftToForm(d: ReceiptDraft): Form {
 
 /**
  * เปลี่ยนประเภทร้านแล้วตั้งหมวดของทุกรายการเป็นหมวดเริ่มต้นของร้านนั้น (ตามสเปก)
- * เช่น เปลี่ยนเป็นร้านอาหาร -> ทุกรายการเป็น "อาหาร" ผู้ใช้แก้รายชิ้นต่อได้
- * ร้านขายของปนกัน (ไม่มีหมวดเริ่มต้น) คงหมวดเดิมของแต่ละรายการไว้
+ * เช่น เปลี่ยนเป็นห้าง/แฟชั่น -> ทุกรายการเป็น "ช้อปปิ้ง" ผู้ใช้แก้รายชิ้นต่อได้
+ * - ร้านที่จัดรายชิ้นได้บางหมวด (ร้านอาหาร: อาหาร/เครื่องดื่ม) คงหมวดเดิมไว้ถ้าอยู่ในชุดนั้น
+ * - ร้านขายของปนกัน (ไม่มีหมวดเริ่มต้น) คงหมวดเดิมของแต่ละรายการไว้
  */
 export function applyMerchantDefault(items: LineItem[], type: MerchantType | undefined): LineItem[] {
   const id = type?.default_category_id;
   if (!id) return items;
-  return items.map((it) => ({ ...it, category_id: id }));
+  const keep = new Set(type.item_category_ids ?? []);
+  return items.map((it) => (it.category_id && keep.has(it.category_id) ? it : { ...it, category_id: id }));
 }
 
 const num = (v: string) => (v.trim() === "" ? null : v.trim());

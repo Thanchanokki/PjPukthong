@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { receipts, transactions } from "../../db/client.js";
 import type { ReceiptDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
-import { merchantTypeOf } from "../../shared/merchant-types.js";
+import { categoryForItem, merchantTypeOf } from "../../shared/merchant-types.js";
 import { quantize } from "../../shared/money.js";
 import { loadBook } from "../categories/categories.service.js";
 import { type DuplicateInfo, findDuplicate } from "../transactions/duplicates.js";
@@ -202,8 +202,10 @@ export async function extract(userId: string, receiptId: string) {
 
   /**
    * หมวดเริ่มต้นตามประเภทร้าน (สเปกของโปรเจกต์)
-   * - ร้านที่มีหมวดเริ่มต้น (ร้านอาหาร = อาหาร, ร้านยา = สุขภาพและยา …) ทุกรายการได้หมวดนั้น
+   * - ร้านที่มีหมวดเริ่มต้น (ร้านยา = สุขภาพและยา, ห้าง/แฟชั่น = ช้อปปิ้ง …) ทุกรายการได้หมวดนั้น
    *   แทนที่ที่ AI เดารายชิ้น — ผู้ใช้แก้รายชิ้นได้ในหน้าตรวจ
+   * - ร้านอาหาร/คาเฟ่ ใช้หมวดที่ AI จัดได้เฉพาะ อาหาร/เครื่องดื่ม (ชาเขียว -> เครื่องดื่ม,
+   *   ข้าวผัด -> อาหาร) หมวดอื่นตกเป็นอาหาร — ดู categoryForItem
    * - ร้านขายของปนกัน (สะดวกซื้อ/ซูเปอร์/ทั่วไป) ใช้หมวดที่ AI จัดรายชิ้นตามเดิม
    * - ใบประกันภัยไม่มีรายการสินค้า (เก็บข้อมูลกรมธรรม์แทน) — ล้างรายการที่ AI อาจอ่านติดมา
    */
@@ -212,7 +214,7 @@ export async function extract(userId: string, receiptId: string) {
     if (type.noItems) {
       draft.line_items = [];
     } else if (type.defaultCategory && book.isSelectable(type.defaultCategory)) {
-      for (const item of draft.line_items) item.category_guess = type.defaultCategory;
+      for (const item of draft.line_items) item.category_guess = categoryForItem(type, item.category_guess);
     }
   }
   if (draft.merchant_type !== "insurance") draft.insurance = null;

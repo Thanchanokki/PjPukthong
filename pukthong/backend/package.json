@@ -10,6 +10,7 @@
     "migrate:merchant-types": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types.ts",
     "migrate:merchant-types-v2": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types-v2.ts",
     "migrate:merchant-types-v3": "tsx --env-file-if-exists=.env src/scripts/migrate-merchant-types-v3.ts",
+    "evaluate": "tsx --env-file-if-exists=.env src/scripts/evaluate-ocr.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

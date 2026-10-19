@@ -25,18 +25,21 @@ type OnChange = (k: keyof Form) => (v: string) => void;
 // ---------------------------------------------------------------- ชิ้นส่วนพื้นฐาน
 
 export function Section({
+  id,
   icon,
   title,
   action,
   children,
 }: {
+  /** ปลายทางของปุ่ม "ไปตรวจ" ในการ์ดผลการอ่าน */
+  id?: string;
   icon: React.ReactNode;
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+    <section id={id} className="scroll-mt-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
       <header className="mb-4 flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-xl bg-mist text-pine">{icon}</span>
         <h2 className="flex-1 font-bold text-ink">{title}</h2>
@@ -135,7 +138,7 @@ export function StoreSection({ form, onChange, warn }: { form: Form; onChange: O
       : null;
 
   return (
-    <Section icon={<StoreIcon className="h-5 w-5" />} title="ข้อมูลร้านค้า">
+    <Section id="sec-store" icon={<StoreIcon className="h-5 w-5" />} title="ข้อมูลร้านค้า">
       <div className="grid grid-cols-2 gap-x-3 gap-y-4">
         <div className="col-span-2">
           <MField label="ชื่อร้าน" value={form.merchant_name} onChange={onChange("merchant_name")} warn={warn("merchant_name")} />
@@ -199,6 +202,7 @@ export function ItemsSection({
 
   return (
     <Section
+      id="sec-items"
       icon={<ListLinesIcon className="h-5 w-5" />}
       title={`รายการสินค้า (${filled})`}
       action={
@@ -439,7 +443,7 @@ export function PaymentSection({ form, onChange, warn }: { form: Form; onChange:
   // AI อาจตอบ transfer — ถือเป็นกลุ่มเดียวกับโอน/QR
   const method = form.payment_method === "transfer" ? "promptpay" : form.payment_method;
   return (
-    <Section icon={<CardIcon className="h-5 w-5" />} title="การชำระเงิน">
+    <Section id="sec-payment" icon={<CardIcon className="h-5 w-5" />} title="การชำระเงิน">
       <div className="space-y-4">
         <div>
           <p className="mb-1.5 text-sm text-ink/70">ช่องทางจ่าย</p>
@@ -508,7 +512,7 @@ export function SummaryCard({
     </div>
   );
   return (
-    <section className="space-y-2.5 rounded-3xl bg-white p-4 text-sm shadow-sm ring-1 ring-black/5">
+    <section id="sec-summary" className="scroll-mt-4 space-y-2.5 rounded-3xl bg-white p-4 text-sm shadow-sm ring-1 ring-black/5">
       {t.hasItems && (
         <>
           {row("ราคารวมก่อนลด", fmt(t.gross), "text-ink/80")}
@@ -542,6 +546,67 @@ export function SummaryCard({
         </p>
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------- สรุปแวบเดียว
+
+const thaiDate = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * สรุปสิ่งที่ระบบอ่านได้ไว้ใต้การ์ดผลการอ่าน — ร้าน สาขา วันที่ และยอดรายการย่อยเทียบยอดบนใบ
+ * อัปเดตตามที่ผู้ใช้แก้ในกล่องด้านล่าง แตะแถวไหนก็เลื่อนไปกล่องที่แก้ค่านั้นได้
+ */
+export function ReviewGlance({
+  form,
+  items,
+  billDiscounts,
+  onGoTo,
+}: {
+  form: Form;
+  items: LineItem[];
+  billDiscounts: BillDiscount[];
+  onGoTo: (id: string) => void;
+}) {
+  const t = computeTotals(items, billDiscounts, form);
+  const printed = money(form.total);
+  // คลาดเคลื่อนได้ 1 บาท เท่ากับคำเตือนในกล่องสรุปยอด (ปัดเศษบนใบเสร็จ)
+  const mismatch = t.hasItems && printed !== null && Math.abs(t.payable - printed) > 1;
+  const date = form.purchased_at
+    ? `${thaiDate(form.purchased_at)}${form.purchased_time ? ` · ${form.purchased_time}` : ""}`
+    : "—";
+
+  const row = (label: string, value: string, target: string, bad = false) => (
+    <button
+      type="button"
+      onClick={() => onGoTo(target)}
+      className={`flex w-full items-center gap-4 px-4 py-4 text-left ${bad ? "bg-red-50" : ""}`}
+    >
+      <span className={`w-32 shrink-0 ${bad ? "font-bold text-red-600" : "text-ink/70"}`}>{label}</span>
+      <span className="min-w-0 flex-1 truncate tabular-nums text-ink">{value}</span>
+    </button>
+  );
+  const card = "divide-y divide-slate-100 overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5";
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="mb-2 px-1 text-sm font-bold text-ink/50">ร้านค้า</h2>
+        <div className={card}>
+          {row("ชื่อร้าน", form.merchant_name || "—", "sec-store")}
+          {form.branch && row("สาขา", form.branch, "sec-store")}
+          {row("วันที่", date, "sec-payment")}
+        </div>
+      </div>
+      <div>
+        <h2 className="mb-2 px-1 text-sm font-bold text-ink/50">สรุปยอด</h2>
+        <div className={card}>
+          {t.hasItems && row("รายการย่อยรวม", fmt(t.payable), "sec-items")}
+          {row("ยอดบนใบเสร็จ", printed === null ? "—" : fmt(printed), "sec-summary", mismatch)}
+        </div>
+      </div>
+    </div>
   );
 }
 

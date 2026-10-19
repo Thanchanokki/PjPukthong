@@ -15,13 +15,14 @@ import {
   DiscountVatSection,
   ItemsSection,
   PaymentSection,
+  ReviewGlance,
   StickyTotalBar,
   StoreSection,
   SummaryCard,
   computeTotals,
 } from "../components/ReviewSections";
 import { DuplicateNotice } from "../components/DuplicateNotice";
-import { ScanConfidenceCard } from "../components/ScanConfidenceCard";
+import { ConfidenceSheet, ScanResultCard } from "../components/ScanResultCard";
 import { ScanHeader } from "../components/ScanHeader";
 import {
   EMPTY,
@@ -32,7 +33,7 @@ import {
   draftToForm,
 } from "../components/TransactionForm";
 import { UnsupportedDialog } from "../components/UnsupportedDialog";
-import { CheckIcon, XIcon } from "../components/icons";
+import { XIcon } from "../components/icons";
 import { money } from "../components/FormFields";
 
 export default function ReviewPage() {
@@ -119,9 +120,12 @@ export default function ReviewPage() {
   const totals = computeTotals(noItems ? [] : items, billDiscounts, form);
   const payable = totals.hasItems ? totals.payable : money(form.total);
   const conf = result?.scan_confidence;
-  // ใบที่ระบบไม่รองรับ (ไม่มีรายการสินค้า สลิปโอน ฯลฯ) หรือใบซ้ำ ต้องไม่ขึ้นว่า "สำเร็จ"
-  const lowConf =
-    conf?.level === "low" || conf?.level === "medium" || Boolean(result?.unsupported || result?.duplicate_of);
+  const closeHow = useCallback(() => setShowHow(false), []);
+  /** ปุ่ม "ไปตรวจ" / แตะแถวสรุป — เลื่อนไปกล่องที่แก้ค่านั้น (หรือเปิดรูปเทียบ) */
+  const goTo = (target: string) => {
+    if (target === "image") setShowImage(true);
+    else document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-28">
@@ -132,63 +136,20 @@ export default function ReviewPage() {
 
       <ScanHeader title="ตรวจสอบข้อมูล" step={3} onBack={() => navigate("/add")} />
 
-      {/* แบนเนอร์ผลการอ่าน — กดรูปเล็กเพื่อดูใบเสร็จเต็มจอ */}
-      <div className="flex items-center gap-3 rounded-3xl bg-pine-dark p-3 pr-4 text-white">
-        <button
-          type="button"
-          onClick={() => setShowImage(true)}
-          aria-label="ดูรูปใบเสร็จ"
-          className="h-16 w-14 shrink-0 overflow-hidden rounded-lg bg-white"
-        >
-          <img src={imageUrl(receiptId)} alt="" className="h-full w-full object-cover object-top" />
-        </button>
-        <div className="min-w-0 flex-1">
-          {reading ? (
-            <>
-              <p className="font-bold">กำลังอ่านใบเสร็จ…</p>
-              <p className="text-sm text-white/70">ใช้เวลาสักครู่</p>
-            </>
-          ) : readError ? (
-            <>
-              <p className="font-bold">อ่านใบเสร็จไม่สำเร็จ</p>
-              <p className="truncate text-sm text-white/70">{readError?.message}</p>
-            </>
-          ) : result ? (
-            <>
-              <p className="font-bold">
-                {result.unsupported?.title ??
-                  (result.duplicate_of ? "ใบเสร็จนี้เคยบันทึกแล้ว" : lowConf ? "อ่านแล้ว ควรตรวจก่อนบันทึก" : "อ่านใบเสร็จสำเร็จ")}
-              </p>
-              <p className="text-sm text-white/75">
-                {conf?.score != null && <>เชื่อถือได้ {conf.score}% · </>}
-                {conf?.score != null && (
-                  <button type="button" onClick={() => setShowHow((v) => !v)} className="underline underline-offset-2">
-                    คิดมายังไง?
-                  </button>
-                )}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-bold">ยังไม่ได้อ่านใบเสร็จนี้</p>
-              <p className="text-sm text-white/70">ให้ระบบอ่าน หรือกรอกเองด้านล่าง</p>
-            </>
-          )}
-        </div>
-        {reading ? (
-          <span className="h-8 w-8 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden="true" />
-        ) : result && !readError ? (
-          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${lowConf ? "bg-amber-400/90" : "bg-white/15"}`}>
-            <CheckIcon className="h-5 w-5" />
-          </span>
-        ) : (
-          <button type="button" onClick={() => extract.mutate()} className="btn shrink-0 bg-white text-pine">
-            {readError ? "ลองอีกครั้ง" : "ให้ระบบอ่าน"}
-          </button>
-        )}
-      </div>
-
-      {showHow && conf && <ScanConfidenceCard conf={conf} initiallyOpen />}
+      {/* การ์ดผลการอ่าน — กดรูปเล็กเพื่อดูใบเสร็จเต็มจอ, "วิธีคิด" เปิดแผ่นล่างจอ */}
+      <ScanResultCard
+        thumbSrc={imageUrl(receiptId)}
+        onOpenImage={() => setShowImage(true)}
+        reading={reading}
+        error={readError}
+        onRead={() => extract.mutate()}
+        read={Boolean(result)}
+        title={result?.unsupported?.title ?? (result?.duplicate_of ? "ใบเสร็จนี้เคยบันทึกแล้ว" : undefined)}
+        conf={conf}
+        onHow={() => setShowHow(true)}
+        onGoTo={goTo}
+      />
+      {showHow && conf && <ConfidenceSheet conf={conf} onClose={closeHow} />}
 
       {result?.duplicate_of && (
         <DuplicateNotice
@@ -196,6 +157,10 @@ export default function ReviewPage() {
           onScanOther={() => navigate("/add")}
           onOpenExisting={() => navigate(`/monthly?month=${result.duplicate_of!.purchased_at.slice(0, 7)}`)}
         />
+      )}
+
+      {result && !reading && (
+        <ReviewGlance form={form} items={noItems ? [] : items} billDiscounts={billDiscounts} onGoTo={goTo} />
       )}
 
       {result?.unsupported && dismissed && (
