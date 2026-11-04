@@ -22,8 +22,26 @@ import receiptsController from "./modules/receipts/receipts.controller.js";
 import transactionsController from "./modules/transactions/transactions.controller.js";
 import { HttpError } from "./shared/errors.js";
 
+/** route รูปรับ token ทาง ?token= (ดู auth.security) — ห้ามให้ค่าจริงติดลง log ไม่งั้นคนอ่าน log สวมรอยผู้ใช้ได้ */
+const maskToken = (url: string) => url.replace(/([?&]token=)[^&]*/g, "$1***");
+
 export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: "info" }, bodyLimit: maxUploadBytes });
+  const app = Fastify({
+    logger: {
+      level: "info",
+      serializers: {
+        // ฟิลด์เดียวกับ serializer ตั้งต้นของ Fastify ต่างกันแค่ปิด token ใน url
+        req: (req) => ({
+          method: req.method,
+          url: maskToken(req.url),
+          host: req.host,
+          remoteAddress: req.ip,
+          remotePort: req.socket?.remotePort,
+        }),
+      },
+    },
+    bodyLimit: maxUploadBytes,
+  });
 
   // ไม่มี CORS = browser บล็อกทุก request จาก :3000 ไป :8000
   await app.register(cors, {
