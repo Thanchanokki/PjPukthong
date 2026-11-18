@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
+import { BudgetAlertDialog } from "./components/BudgetAlertDialog";
 import BudgetPage from "./pages/BudgetPage";
 import CapturePage from "./pages/CapturePage";
 import ScanPage from "./pages/ScanPage";
@@ -67,6 +68,9 @@ function Shell() {
       </main>
 
       {!inScanFlow && <BottomNav />}
+
+      {/* เตือนงบใกล้หมด/เกินงบ ครั้งเดียวหลังเข้าสู่ระบบ — ไม่เด้งทับกล้องระหว่างสแกน */}
+      {!inScanFlow && <BudgetAlertDialog />}
     </div>
   );
 }

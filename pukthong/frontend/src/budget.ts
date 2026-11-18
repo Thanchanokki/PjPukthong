@@ -34,6 +34,9 @@ export type Budget = {
   options: BudgetOption[];
 };
 
+/** prefix ของ key ใน sessionStorage ที่จำว่าป๊อปอัพเตือนงบเด้งไปแล้ว — auth.tsx ล้างตอนออกจากระบบ */
+export const BUDGET_ALERT_KEY = "budget-alert:";
+
 const q = (axis: BudgetAxis) => (axis === "merchant" ? "by=merchant" : "by=item");
 
 export async function fetchBudget(month: string, axis: BudgetAxis = "merchant"): Promise<Budget> {
