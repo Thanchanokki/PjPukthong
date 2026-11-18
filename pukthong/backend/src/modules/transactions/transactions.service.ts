@@ -8,8 +8,7 @@ import { randomUUID } from "node:crypto";
 import { receipts, transactions } from "../../db/client.js";
 import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
 import { httpError } from "../../shared/errors.js";
-import { matchPolicyType } from "../../shared/insurance.js";
-import { matchMerchantType, merchantTypeOf } from "../../shared/merchant-types.js";
+import { matchSupportedMerchantType, merchantTypeOf } from "../../shared/merchant-types.js";
 import { Decimal, dec, moneyOut, quantize, sum } from "../../shared/money.js";
 import { type CategoryBook, loadBook } from "../categories/categories.service.js";
 import { normalizeItemPrice } from "../receipts/receipts.schema.js";
@@ -61,26 +60,12 @@ const duplicateQuery = (f: ReturnType<typeof toFields>) => ({
 /** ฟิลด์ที่ผู้ใช้แก้ได้ — ใช้ร่วมกันทั้งตอน insert และ update */
 /**
  * หมวดเริ่มต้นของร้านประเภทนี้ ถ้าผู้ใช้คนนี้ยังใช้หมวดนั้นได้ — null = ร้านขายของปนกัน
- * ใช้เติมหมวดของรายการที่ยังไม่ได้เลือก (และของทั้งใบเมื่อไม่มีรายการ เช่น ใบประกันภัย)
+ * ใช้เติมหมวดของรายการที่ยังไม่ได้เลือก (และของทั้งใบเมื่อไม่มีรายการ)
  */
 function defaultCategoryOf(payload: TransactionCreate, book: CategoryBook): string | null {
-  const type = matchMerchantType(payload.merchant_type);
+  const type = matchSupportedMerchantType(payload.merchant_type);
   const id = type ? merchantTypeOf(type).defaultCategory : null;
   return id && book.isSelectable(id) ? id : null;
-}
-
-function insuranceDoc(payload: TransactionCreate) {
-  const i = payload.insurance;
-  if (!i || matchMerchantType(payload.merchant_type) !== "insurance") return null;
-  return {
-    insurer: i.insurer,
-    policyNumber: i.policy_number,
-    policyType: matchPolicyType(i.policy_type),
-    insuredName: i.insured_name,
-    coverageStart: i.coverage_start,
-    coverageEnd: i.coverage_end,
-    premium: quantize(i.premium),
-  };
 }
 
 /**
@@ -108,8 +93,8 @@ function toFields(payload: TransactionCreate, book: CategoryBook) {
     // ระบบรายรับถูกตัดออก — ทุกอย่างที่บันทึกผ่าน API นี้คือรายจ่าย
     direction: "expense",
     merchantName: payload.merchant_name,
-    // ค่าที่ไม่รู้จักกลายเป็น null (= นับเป็น "ร้านอื่นๆ" ตอนสรุป) ไม่ใช่ error
-    merchantType: matchMerchantType(payload.merchant_type),
+    // ค่าที่ไม่รู้จักหรือไม่รองรับกลายเป็น null (= นับเป็น "ร้านอื่นๆ" ตอนสรุป) ไม่ใช่ error
+    merchantType: matchSupportedMerchantType(payload.merchant_type),
     branch: payload.branch,
     merchantTaxId: payload.merchant_tax_id,
     docNumber: payload.doc_number,
@@ -123,16 +108,14 @@ function toFields(payload: TransactionCreate, book: CategoryBook) {
     vatAmount: quantize(payload.vat_amount),
     total: quantize(payload.total) as string,
     categoryId: resolveCategory(book, payload) ?? defaultCategoryOf(payload, book),
-    insurance: insuranceDoc(payload),
     paymentMethod: payload.payment_method,
     paymentChannel: payload.payment_channel,
     note: payload.note,
   };
 }
 
-/** ใบประเภทที่ไม่มีรายการสินค้า (ประกันภัย) ไม่เก็บรายการเลย — ทั้งใบนับเข้าหมวดเริ่มต้นของร้าน */
 const itemDocs = (payload: TransactionCreate, book: CategoryBook): TransactionItemDoc[] =>
-  (merchantTypeOf(matchMerchantType(payload.merchant_type)).noItems ? [] : payload.items).map((item, i) => ({
+  payload.items.map((item, i) => ({
     lineNo: item.line_no ?? i + 1,
     name: item.name,
     // จำนวนใบเสร็จมีทศนิยมได้ถึง 3 ตำแหน่ง (เช่น ชั่งกิโล 0.375)
@@ -164,9 +147,9 @@ export async function create(
   const fields = toFields(payload, book);
   const items = itemDocs(payload, book);
 
-  // ใบที่มาจากการสแกนต้องมีรายการสินค้า (ยกเว้นใบประกันภัย) — หน้ากรอกเองไม่บังคับ
+  // ใบที่มาจากการสแกนต้องมีรายการสินค้า — หน้ากรอกเองไม่บังคับ
   // เพราะออกแบบไว้สำหรับกรณีไม่มีใบเสร็จ
-  if (payload.receipt_id && items.length === 0 && fields.merchantType !== "insurance") {
+  if (payload.receipt_id && items.length === 0) {
     throw httpError(422, "ใบเสร็จนี้ไม่มีรายการสินค้า โปรดนำใบเสร็จที่มีรายการสินค้ามาสแกน หรือเพิ่มรายการก่อนบันทึก");
   }
 

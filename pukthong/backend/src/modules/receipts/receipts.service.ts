@@ -207,17 +207,18 @@ export async function extract(userId: string, receiptId: string) {
    * - ร้านอาหาร/คาเฟ่ ใช้หมวดที่ AI จัดได้เฉพาะ อาหาร/เครื่องดื่ม (ชาเขียว -> เครื่องดื่ม,
    *   ข้าวผัด -> อาหาร) หมวดอื่นตกเป็นอาหาร — ดู categoryForItem
    * - ร้านขายของปนกัน (สะดวกซื้อ/ซูเปอร์/ทั่วไป) ใช้หมวดที่ AI จัดรายชิ้นตามเดิม
-   * - ใบประกันภัยไม่มีรายการสินค้า (เก็บข้อมูลกรมธรรม์แทน) — ล้างรายการที่ AI อาจอ่านติดมา
+   * - ประเภทที่ไม่รองรับ (ใบเบี้ยประกัน) ตัดสินป๊อปอัพเตือนก่อน แล้วล้างประเภทร้านทิ้ง
+   *   ผู้ใช้ที่เลือกกรอกต่อจะได้เลือกประเภทร้านที่ระบบรองรับเอง
    */
+  const unsupported = unsupportedReason(draft);
   if (draft.merchant_type) {
     const type = merchantTypeOf(draft.merchant_type);
-    if (type.noItems) {
-      draft.line_items = [];
+    if (type.unsupported) {
+      draft.merchant_type = null;
     } else if (type.defaultCategory && book.isSelectable(type.defaultCategory)) {
       for (const item of draft.line_items) item.category_guess = categoryForItem(type, item.category_guess);
     }
   }
-  if (draft.merchant_type !== "insurance") draft.insurance = null;
 
   await receipts.updateOne(
     { _id: receiptId },
@@ -243,7 +244,7 @@ export async function extract(userId: string, receiptId: string) {
      */
     scan_confidence: scanConfidence(draft, ocrText, receipt.ocrQuality ?? null),
     /** สลิปโอนเงิน / บิลเขียนมือ / ไม่ใช่ใบเสร็จ — frontend เด้งป๊อปอัพเตือน (null = ปกติ) */
-    unsupported: unsupportedReason(draft),
+    unsupported,
     /** ใบนี้เคยบันทึกแล้ว (รูปเดิม หรือถ่ายใบเดิมใหม่) — frontend เตือนและไม่ให้บันทึกซ้ำ */
     duplicate_of: await findDuplicate(
       userId,

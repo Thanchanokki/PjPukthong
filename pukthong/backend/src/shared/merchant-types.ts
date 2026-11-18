@@ -27,8 +27,11 @@ export interface MerchantType extends Matchable {
    * ไม่ระบุ = ทุกรายการเป็น defaultCategory
    */
   itemCategories?: string[];
-  /** ใบประเภทนี้ไม่มีรายการสินค้า (ใบเสร็จค่าเบี้ยประกัน) — เก็บข้อมูลกรมธรรม์แทน */
-  noItems?: boolean;
+  /**
+   * ประเภทนอกขอบเขตของระบบ (ใบเสร็จค่าเบี้ยประกัน) — ยังอยู่ใน prompt ให้ AI ระบุได้
+   * เพื่อเด้งเตือนผู้ใช้ แต่ไม่มีในดรอปดาวน์และบันทึกเป็นประเภทนี้ไม่ได้
+   */
+  unsupported?: boolean;
 }
 
 /**
@@ -117,8 +120,8 @@ export const MERCHANT_TYPES: MerchantType[] = [
     icon: "🛡️",
     hint: "ใบเสร็จค่าเบี้ยประกันจาก AIA, เมืองไทยประกันชีวิต, กรุงเทพประกันภัย, FWD, วิริยะประกันภัย, ไทยประกันชีวิต",
     aliases: ["ประกัน", "ประกันชีวิต", "ประกันสุขภาพ"],
-    defaultCategory: "insurance",
-    noItems: true,
+    defaultCategory: null,
+    unsupported: true,
   },
   {
     id: "general_other",
@@ -140,6 +143,12 @@ export const merchantTypeOf = (id: string | null | undefined) =>
 
 /** id/ชื่อ/alias -> id ของประเภทร้าน (null ถ้าจับคู่ไม่ได้) */
 export const matchMerchantType = (value: unknown) => matchCategory(value, MERCHANT_TYPES);
+
+/** เหมือน matchMerchantType แต่ประเภทที่ไม่รองรับกลายเป็น null — ใช้ตอนบันทึกรายการ */
+export function matchSupportedMerchantType(value: unknown): string | null {
+  const id = matchMerchantType(value);
+  return id && !merchantTypeOf(id).unsupported ? id : null;
+}
 
 /** รายการสำหรับแปะลง prompt ของ AI */
 export const merchantTypePrompt = () =>

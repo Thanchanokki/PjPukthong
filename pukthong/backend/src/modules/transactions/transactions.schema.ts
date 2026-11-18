@@ -70,21 +70,6 @@ export const transactionCreateSchema = z.object({
       )
       .nullable(),
   ),
-  /** ข้อมูลกรมธรรม์ — ส่งเฉพาะใบประกันภัย */
-  insurance: z.preprocess(
-    (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null),
-    z
-      .object({
-        insurer: strField,
-        policy_number: strField,
-        policy_type: strField,
-        insured_name: strField,
-        coverage_start: z.preprocess(toDateString, z.string().nullable()),
-        coverage_end: z.preprocess(toDateString, z.string().nullable()),
-        premium: decField,
-      })
-      .nullable(),
-  ),
   branch: strField,
   merchant_tax_id: strField,
   doc_number: strField,

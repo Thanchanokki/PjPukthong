@@ -8,7 +8,6 @@ import OpenAI from "openai";
 import sharp from "sharp";
 
 import { settings } from "../../config/index.js";
-import { policyTypePrompt } from "../../shared/insurance.js";
 import { merchantTypePrompt } from "../../shared/merchant-types.js";
 
 /**
@@ -29,11 +28,6 @@ export const systemPrompt = (categoryList: string) => `คุณคือระ�
 - merchant_type: ประเภทของ "ร้าน" ที่ออกใบนี้ (ทั้งใบ ไม่ใช่รายชิ้น) ตอบเป็น id จากรายการนี้เท่านั้น
   ${merchantTypePrompt()}
   ดูจากชื่อร้านเป็นหลัก ไม่ใช่สินค้าที่ซื้อ — ซื้อปากกาที่ 7-Eleven ก็ยังเป็น convenience
-- insurance: ถ้าเป็นใบเสร็จค่าเบี้ยประกัน (merchant_type = insurance) ให้กรอก object นี้ และส่ง line_items เป็น []
-  เพราะใบประกันไม่มีรายการสินค้า — ใบประเภทอื่นให้ส่ง insurance เป็น null
-  รูปแบบ: {"insurer": "...", "policy_number": "...", "policy_type": "life", "insured_name": "...", "coverage_start": "YYYY-MM-DD", "coverage_end": "YYYY-MM-DD", "premium": 0}
-  policy_type เลือกจาก: ${policyTypePrompt()}
-  premium = จำนวนเบี้ยประกันที่ชำระในใบนี้, coverage_start/coverage_end = ระยะเวลาคุ้มครองแบบ YYYY-MM-DD (แปลง พ.ศ. เป็น ค.ศ.)
 - handwritten: true ถ้ารายการสินค้าหรือยอดเงินบนใบ "เขียนด้วยลายมือ" เช่น บิลเงินสดที่ร้านเขียนด้วยปากกา
   ใบที่พิมพ์จากเครื่องแต่มีแค่ลายเซ็น ตราประทับ หรือเลขจดเพิ่มด้วยมือ ให้ตอบ false
 - ถ้าราคามีตัวอักษรกำกับต่อท้าย (เช่น N) ให้เก็บไว้ในฟิลด์ flag ของรายการนั้น ห้ามตัดทิ้ง
@@ -105,7 +99,6 @@ export const systemPrompt = (categoryList: string) => `คุณคือระ�
   "warnings": ["..."],
   "unreadable_regions": ["..."],
   "raw_text": "...",
-  "insurance": null,
   "extra": {}
 }`;
 

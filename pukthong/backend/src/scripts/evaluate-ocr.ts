@@ -379,9 +379,11 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     item.category_guess = categoryId(guess ?? "") ?? categoryId(guess?.split(">").pop() ?? "") ?? null;
   }
   const guesses = new Map(d.line_items.map((i) => [i, i.category_guess]));
+  // ตัดสินป๊อปอัพก่อนล้างประเภทร้านที่ไม่รองรับ — ลำดับเดียวกับ receipts.service
+  const unsupported = unsupportedReason(d)?.kind ?? null;
   if (d.merchant_type) {
     const type = merchantTypeOf(d.merchant_type);
-    if (type.noItems) d.line_items = [];
+    if (type.unsupported) d.merchant_type = null;
     else for (const item of d.line_items) item.category_guess = categoryForItem(type, item.category_guess);
   }
   return {
@@ -404,7 +406,7 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     billDiscounts: d.bill_discounts
       .map((b) => ({ kind: b.kind as string, amount: money(b.amount) }))
       .filter((b): b is BillDiscount => b.amount !== null),
-    unsupported: unsupportedReason(d)?.kind ?? null,
+    unsupported,
   };
 }
 

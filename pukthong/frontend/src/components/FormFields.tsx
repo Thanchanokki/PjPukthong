@@ -96,63 +96,6 @@ export function CategorySelect({
   );
 }
 
-/**
- * ประเภทกรมธรรม์ — ต้องตรงกับ backend/src/shared/insurance.ts (id ใช้คิดสิทธิลดหย่อนภาษี)
- */
-const POLICY_TYPES = [
-  { id: "life", name: "ประกันชีวิต" },
-  { id: "health", name: "ประกันสุขภาพ (ตนเอง)" },
-  { id: "health_parents", name: "ประกันสุขภาพบิดามารดา" },
-  { id: "annuity", name: "ประกันชีวิตแบบบำนาญ" },
-  { id: "non_life", name: "ประกันวินาศภัย (รถยนต์/อุบัติเหตุ ฯลฯ)" },
-  { id: "other", name: "อื่นๆ" },
-];
-
-/**
- * ข้อมูลกรมธรรม์ — ใบเสร็จค่าเบี้ยประกันไม่มีรายการสินค้า จึงเก็บข้อมูลนี้แทน
- * ใช้สรุปเบี้ยประกันรายปีเพื่อลดหย่อนภาษี (หน้า "ลดหย่อนภาษี")
- */
-export function InsuranceFields({
-  form,
-  onChange,
-}: {
-  form: Form;
-  onChange: (k: keyof Form) => (v: string) => void;
-}) {
-  return (
-    <div className="col-span-2 grid grid-cols-2 gap-3 rounded-xl border border-teal-200 bg-teal-50/50 p-3">
-      <p className="col-span-2 text-sm font-medium text-teal-900">🛡️ ข้อมูลกรมธรรม์</p>
-      <div className="col-span-2">
-        <Field label="บริษัทประกัน" value={form.ins_insurer} onChange={onChange("ins_insurer")} />
-      </div>
-      <Field label="เลขที่กรมธรรม์" value={form.ins_policy_number} onChange={onChange("ins_policy_number")} />
-      <div>
-        <label className="label">ประเภทกรมธรรม์</label>
-        <select
-          className={`field ${form.ins_policy_type ? "" : "field-warn"}`}
-          value={form.ins_policy_type}
-          onChange={(e) => onChange("ins_policy_type")(e.target.value)}
-        >
-          <option value="">— เลือกประเภท —</option>
-          {POLICY_TYPES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="col-span-2">
-        <Field label="ผู้เอาประกัน" value={form.ins_insured_name} onChange={onChange("ins_insured_name")} />
-      </div>
-      <Field label="คุ้มครองตั้งแต่" type="date" value={form.ins_coverage_start} onChange={onChange("ins_coverage_start")} />
-      <Field label="คุ้มครองถึง" type="date" value={form.ins_coverage_end} onChange={onChange("ins_coverage_end")} />
-      <div className="col-span-2">
-        <Field label="จำนวนเบี้ยประกัน" type="number" value={form.ins_premium} onChange={onChange("ins_premium")} />
-      </div>
-    </div>
-  );
-}
-
 /** ช่องกรอกทั้งหมดของรายการหนึ่งใบ (ไม่รวมรายการสินค้าและปุ่มบันทึก) */
 export function TransactionFields({
   form,
@@ -168,7 +111,7 @@ export function TransactionFields({
   const { data: categories = [] } = useCategories();
   const selectedType = merchantTypes.find((t) => t.id === form.merchant_type);
   const defaultName =
-    selectedType?.default_category_id && !selectedType.no_items
+    selectedType?.default_category_id
       ? categories.find((c) => c.id === selectedType.default_category_id)?.name
       : null;
 
@@ -203,7 +146,6 @@ export function TransactionFields({
           </p>
         )}
       </div>
-      {form.merchant_type === "insurance" && <InsuranceFields form={form} onChange={onChange} />}
       <Field label="สาขา" value={form.branch} onChange={onChange("branch")} />
       <Field
         label="เลขที่เอกสาร"

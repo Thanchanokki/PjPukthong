@@ -119,19 +119,6 @@ export interface CategoryDoc {
   updatedAt: Date;
 }
 
-/** ข้อมูลกรมธรรม์ — เงินเก็บเป็น string ตามกติกาเรื่องเงินด้านบน */
-export interface InsuranceDoc {
-  insurer: string | null;
-  policyNumber: string | null;
-  /** id ใน shared/insurance.ts (life, health, health_parents, annuity, non_life, other) */
-  policyType: string | null;
-  insuredName: string | null;
-  /** 'YYYY-MM-DD' */
-  coverageStart: string | null;
-  coverageEnd: string | null;
-  premium: string | null;
-}
-
 export interface TransactionDoc {
   _id: string;
   /** เจ้าของ = UserDoc._id — ทุก query ต้องกรองด้วยฟิลด์นี้ ไม่งั้นข้อมูลข้ามคน */
@@ -156,7 +143,7 @@ export interface TransactionDoc {
   /**
    * วันที่บนใบเสร็จ 'YYYY-MM-DD' — เวลาที่เหตุการณ์จริงเกิดขึ้น
    *
-   * ใช้ทำรายงาน สรุปยอดรายเดือน เคลมภาษี เช็คระยะประกัน — ทุกอย่างที่ตอบคำถามว่า
+   * ใช้ทำรายงาน สรุปยอดรายเดือน งบประมาณ — ทุกอย่างที่ตอบคำถามว่า
    * "เงินก้อนนี้ถูกใช้ไปเมื่อไหร่" ห้ามเอา uploadedAt มาใช้แทนเด็ดขาด เพราะถ่ายใบเก่า
    * เมื่อไหร่ยอดจะไปโผล่ผิดเดือนทันที
    */
@@ -185,11 +172,6 @@ export interface TransactionDoc {
   total: string;
   /** หมวดของทั้งใบ = CategoryDoc._id — ใช้เฉพาะใบที่ไม่มีรายการย่อย */
   categoryId: string | null;
-  /**
-   * ข้อมูลกรมธรรม์ — มีเฉพาะใบเสร็จค่าเบี้ยประกัน (merchantType = insurance) ซึ่งไม่มีรายการสินค้า
-   * ใช้สรุปเบี้ยประกันรายปีเพื่อลดหย่อนภาษี (ดู modules/tax)
-   */
-  insurance?: InsuranceDoc | null;
   paymentMethod: string | null;
   paymentChannel: string | null;
   note: string | null;

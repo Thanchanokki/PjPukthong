@@ -40,6 +40,11 @@ export async function ensureSystemCategories(): Promise<void> {
       },
     })),
   );
+  // หมวดกลางที่ถูกเอาออกจากโค้ด (เช่น ประกันภัย) — ซ่อนไว้ ไม่ลบ เพราะรายการเก่ายังต้องแสดงชื่อหมวดได้
+  await categories.updateMany(
+    { userId: null, _id: { $nin: SYSTEM_CATEGORIES.map((c) => c.id) }, isActive: true },
+    { $set: { isActive: false, updatedAt: now } },
+  );
 }
 
 /**

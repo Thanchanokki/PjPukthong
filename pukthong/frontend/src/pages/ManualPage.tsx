@@ -66,8 +66,6 @@ export default function ManualPage() {
       setItems((xs) => applyMerchantDefault(xs, merchantTypes.find((t) => t.id === v)));
     }
   };
-  /** ใบประกันภัยไม่มีรายการสินค้า — ซ่อนช่องรายการ (ข้อมูลกรมธรรม์อยู่ในฟอร์มด้านบนแทน) */
-  const noItems = merchantTypes.find((t) => t.id === form.merchant_type)?.no_items ?? false;
 
   function reset() {
     setForm(blank());
@@ -127,13 +125,13 @@ export default function ManualPage() {
 
       <TransactionFields form={form} onChange={set} />
 
-      {!noItems && <ItemsEditor
-          items={items}
-          setItems={setItems}
-          totals={form}
-          billDiscounts={billDiscounts}
-          setBillDiscounts={setBillDiscounts}
-        />}
+      <ItemsEditor
+        items={items}
+        setItems={setItems}
+        totals={form}
+        billDiscounts={billDiscounts}
+        setBillDiscounts={setBillDiscounts}
+      />
 
       {save.isError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
