@@ -57,8 +57,8 @@ export const settings = {
   blurThreshold: flt("BLUR_THRESHOLD", 100.0),
   maxUploadMb: int("MAX_UPLOAD_MB", 15),
   /** โควตาต่อผู้ใช้ต่อวัน (0 = ไม่จำกัด) — คุมค่า OCR และ AI ดู shared/quota.ts */
-  dailyScanLimit: int("DAILY_SCAN_LIMIT", 20),
-  dailyAiLimit: int("DAILY_AI_LIMIT", 30),
+  dailyScanLimit: int("DAILY_SCAN_LIMIT", 10),
+  dailyAiLimit: int("DAILY_AI_LIMIT", 10),
   uploadDir: str("UPLOAD_DIR", "/data/uploads"),
   corsOrigins: str("CORS_ORIGINS", "http://localhost:3000"),
   /**
