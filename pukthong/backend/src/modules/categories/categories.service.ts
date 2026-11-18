@@ -8,9 +8,12 @@ import { randomUUID } from "node:crypto";
 
 import { categories } from "../../db/client.js";
 import type { CategoryDoc } from "../../db/models.js";
-import { FALLBACK_ID, SYSTEM_CATEGORIES, matchCategory } from "../../shared/categories.js";
+import { FALLBACK_ID, SYSTEM_CATEGORIES, matchCategory, promptName, stripExamples } from "../../shared/categories.js";
 import { httpError } from "../../shared/errors.js";
 import type { CategoryCreate, CategoryUpdate } from "./categories.schema.js";
+
+/** ตัวอย่างที่แปะต่อท้ายชื่อหมวดกลางใน prompt — เก็บในโค้ดเท่านั้น ไม่ seed ลง DB */
+const EXAMPLES = new Map(SYSTEM_CATEGORIES.map((c) => [c.id, c.examples ?? []]));
 
 /** หมวดของผู้ใช้เรียงต่อท้ายหมวดกลางเสมอ — เว้นช่องไว้เผื่อหมวดกลางเพิ่มในอนาคต */
 const USER_SORT_BASE = 100;
@@ -85,17 +88,20 @@ export class CategoryBook {
   /** ชื่อ/alias/id -> id ของหมวดที่เปิดอยู่ (null ถ้าจับคู่ไม่ได้) */
   match(value: unknown): string | null {
     return matchCategory(
-      value,
+      stripExamples(value),
       this.active.map((c) => ({ id: c._id, name: c.name, aliases: c.aliases ?? [] })),
     );
   }
 
-  /** รายชื่อหมวดสำหรับแปะลง prompt ของ AI — หมวดย่อยแสดงเป็น "หลัก > ย่อย" */
+  /**
+   * รายชื่อหมวดสำหรับแปะลง prompt ของ AI — หมวดย่อยแสดงเป็น "หลัก > ย่อย"
+   * หมวดกลางที่มีตัวอย่างแสดงเป็น "การศึกษา (เช่น ค่าเทอม, ถ่ายเอกสาร)"
+   */
   promptList(): string {
     return this.active
       .map((c) => {
         const parent = c.parentId ? this.get(c.parentId) : undefined;
-        return parent ? `${parent.name} > ${c.name}` : c.name;
+        return promptName(parent ? `${parent.name} > ${c.name}` : c.name, EXAMPLES.get(c._id));
       })
       .join(" | ");
   }
