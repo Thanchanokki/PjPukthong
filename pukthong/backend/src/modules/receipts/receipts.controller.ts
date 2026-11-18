@@ -8,7 +8,9 @@
  */
 import type { FastifyInstance } from "fastify";
 
+import { settings } from "../../config/index.js";
 import { requireUuid } from "../../shared/errors.js";
+import { assertQuota, useQuota } from "../../shared/quota.js";
 import { readImageUpload } from "../../shared/upload.js";
 import { requireAuth, requireAuthAllowQueryToken } from "../auth/auth.security.js";
 import { receiptRawOut } from "./receipts.serializer.js";
@@ -16,9 +18,12 @@ import * as service from "./receipts.service.js";
 
 export default async function receiptsController(app: FastifyInstance) {
   app.post("/api/receipts", { preHandler: requireAuth }, async (req, reply) => {
+    assertQuota(req.userId, "scan", settings.dailyScanLimit);
     const raw = await readImageUpload(req);
 
     const result = await service.createFromImage(req.userId, raw);
+    // รูปซ้ำใช้ผล OCR เดิม ไม่เสียค่า API จึงไม่นับโควตา
+    if (!result.duplicate) useQuota(req.userId, "scan");
 
     return reply.code(201).send({
       receipt_id: result.receiptId,
@@ -40,8 +45,13 @@ export default async function receiptsController(app: FastifyInstance) {
   app.post<{ Params: { receiptId: string } }>(
     "/api/receipts/:receiptId/extract",
     { preHandler: requireAuth },
-    async (req) =>
-      service.extract(req.userId, requireUuid(req.params.receiptId, "receipt_id")),
+    async (req) => {
+      const id = requireUuid(req.params.receiptId, "receipt_id");
+      assertQuota(req.userId, "ai", settings.dailyAiLimit);
+      // นับก่อนเรียก — เรียกแล้วเสียค่า API แม้ AI จะตอบไม่สำเร็จ
+      useQuota(req.userId, "ai");
+      return service.extract(req.userId, id);
+    },
   );
 
   /**

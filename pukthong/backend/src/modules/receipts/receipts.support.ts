@@ -8,10 +8,12 @@
  *   และมักซ้ำกับใบเสร็จของร้านที่ผู้ใช้สแกนอีกใบ (ยอดเดียวกันถูกนับสองครั้ง)
  * - บิลเขียนมือ: OCR/AI อ่านลายมือผิดบ่อย ตัวเลขที่ได้จึงเชื่อถือไม่ได้
  * - ไม่ใช่ใบเสร็จ: รูปผิด — ไม่มีอะไรให้บันทึก
+ * - ใบเสร็จค่าเบี้ยประกัน: อยู่นอกขอบเขต (ระบบเน้นรายจ่ายประจำวันของนักศึกษา)
+ *   AI ยังต้องระบุประเภทนี้ได้ ไม่งั้นจะเดาเป็นร้านอื่นแล้วอ่านผิดโดยผู้ใช้ไม่รู้ตัว
  */
 import type { ReceiptDraft } from "./receipts.schema.js";
 
-export type UnsupportedKind = "transfer_slip" | "handwritten" | "not_receipt" | "no_items";
+export type UnsupportedKind = "transfer_slip" | "handwritten" | "not_receipt" | "insurance" | "no_items";
 
 export interface Unsupported {
   kind: UnsupportedKind;
@@ -49,10 +51,18 @@ export function unsupportedReason(d: ReceiptDraft): Unsupported | null {
         "ตรวจทุกช่องให้ละเอียดก่อนบันทึก หรือกรอกรายการเองแทน",
     };
   }
-  // ระบบรองรับเฉพาะใบเสร็จที่มีรายการสินค้า (ใช้แยกหมวดรายชิ้น) — ยกเว้นใบประกันภัย
-  // ที่ไม่มีรายการสินค้าตามปกติ (เก็บข้อมูลกรมธรรม์แทน)
+  if (d.merchant_type === "insurance") {
+    return {
+      kind: "insurance",
+      title: "ยังไม่รองรับใบเสร็จค่าเบี้ยประกัน",
+      message:
+        "ระบบรองรับใบเสร็จค่าใช้จ่ายประจำวัน เช่น ร้านอาหาร ร้านสะดวกซื้อ และร้านค้าทั่วไป " +
+        "แนะนำให้สแกนใบเสร็จจากร้านค้าแทน หรือกรอกรายการเองต่อจากหน้านี้",
+    };
+  }
+  // ระบบรองรับเฉพาะใบเสร็จที่มีรายการสินค้า (ใช้แยกหมวดรายชิ้น)
   const hasItems = d.line_items.some((i) => i.amount !== null);
-  if (!hasItems && d.merchant_type !== "insurance") {
+  if (!hasItems) {
     return {
       kind: "no_items",
       title: "ไม่พบรายการสินค้าในใบเสร็จนี้",

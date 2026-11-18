@@ -2,8 +2,7 @@
  * แปลง TransactionDoc จาก MongoDB (camelCase, _id) เป็น JSON ที่ frontend รออยู่
  * (snake_case, id) ลำดับฟิลด์และชนิดข้อมูลต้องตรงกับ frontend/src/api.ts ทุกตัว
  */
-import type { InsuranceDoc, TransactionDoc, TransactionItemDoc } from "../../db/models.js";
-import { policyTypeOf } from "../../shared/insurance.js";
+import type { TransactionDoc, TransactionItemDoc } from "../../db/models.js";
 import { merchantTypeOf } from "../../shared/merchant-types.js";
 import type { CategoryBook } from "../categories/categories.service.js";
 
@@ -33,20 +32,6 @@ export function itemOut(r: TransactionItemDoc, index: number, book: CategoryBook
     // หมวดหลักที่ dashboard ใช้จัดกลุ่ม (หมวดย่อย -> แม่, ยังไม่จัดหมวด -> อื่นๆ)
     category_root: book.rootOf(r.categoryId).name,
     id: index + 1,
-  };
-}
-
-export function insuranceOut(i: InsuranceDoc | null | undefined) {
-  if (!i) return null;
-  return {
-    insurer: i.insurer,
-    policy_number: i.policyNumber,
-    policy_type: i.policyType,
-    policy_type_name: i.policyType ? policyTypeOf(i.policyType).name : null,
-    insured_name: i.insuredName,
-    coverage_start: i.coverageStart,
-    coverage_end: i.coverageEnd,
-    premium: i.premium,
   };
 }
 
@@ -81,7 +66,6 @@ export function transactionOut(r: TransactionDoc, book: CategoryBook) {
     category_id: r.categoryId ?? null,
     category: book.nameOf(r.categoryId),
     category_root: book.rootOf(r.categoryId).name,
-    insurance: insuranceOut(r.insurance),
     payment_method: r.paymentMethod,
     payment_channel: r.paymentChannel,
     note: r.note,

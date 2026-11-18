@@ -11,7 +11,6 @@ import type { BillDiscount, LineItem } from "../api";
 import { useCategories, useMerchantTypes } from "../categories";
 import {
   AddBillDiscount,
-  InsuranceFields,
   billDiscountText,
   fmt,
   money,
@@ -133,7 +132,7 @@ export function StoreSection({ form, onChange, warn }: { form: Form; onChange: O
   const { data: categories = [] } = useCategories();
   const type = merchantTypes.find((t) => t.id === form.merchant_type);
   const defaultName =
-    type?.default_category_id && !type.no_items
+    type?.default_category_id
       ? categories.find((c) => c.id === type.default_category_id)?.name
       : null;
 
@@ -165,7 +164,6 @@ export function StoreSection({ form, onChange, warn }: { form: Form; onChange: O
             </span>
           )}
         </label>
-        {form.merchant_type === "insurance" && <InsuranceFields form={form} onChange={onChange} />}
         <MField label="สาขา" value={form.branch} onChange={onChange("branch")} />
         <MField label="เลขที่เอกสาร" value={form.doc_number} onChange={onChange("doc_number")} />
         <div className="col-span-2">

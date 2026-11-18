@@ -15,7 +15,6 @@ import MonthlyPage from "./pages/MonthlyPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReviewPage from "./pages/ReviewPage";
 import SettingsPage from "./pages/SettingsPage";
-import TaxPage from "./pages/TaxPage";
 
 
 
@@ -62,7 +61,6 @@ function Shell() {
            <Route path="/budget" element={<BudgetPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/tax" element={<TaxPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

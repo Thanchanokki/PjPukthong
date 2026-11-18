@@ -7,7 +7,6 @@
  */
 import { z } from "zod";
 
-import { matchPolicyType } from "../../shared/insurance.js";
 import { matchMerchantType } from "../../shared/merchant-types.js";
 import { kindOf, looksLikeDiscount, normalizeKind } from "../../shared/discounts.js";
 import { Decimal, dec, sum } from "../../shared/money.js";
@@ -64,20 +63,6 @@ const lineItemSchema = z.object({
 }).transform(normalizeItemPrice);
 
 export type LineItem = z.infer<typeof lineItemSchema>;
-
-/** ข้อมูลกรมธรรม์จากใบเสร็จค่าเบี้ยประกัน — ใช้สรุปสิทธิลดหย่อนภาษีรายปี */
-export const insuranceSchema = z.object({
-  insurer: strField,
-  policy_number: strField,
-  /** ประเภทที่ AI ตอบ -> id ใน shared/insurance.ts (ตอบนอกรายการ = null ให้ผู้ใช้เลือกเอง) */
-  policy_type: z.preprocess(matchPolicyType, z.string().nullable()),
-  insured_name: strField,
-  coverage_start: z.preprocess(toDateString, z.string().nullable()),
-  coverage_end: z.preprocess(toDateString, z.string().nullable()),
-  premium: decField,
-});
-
-export type InsuranceDraft = z.infer<typeof insuranceSchema>;
 
 const draftSchema = z.object({
   document_type: strField,
@@ -146,11 +131,6 @@ const draftSchema = z.object({
     (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}),
     z.object({ name: strField, member_no: strField }),
   ),
-  /** ข้อมูลกรมธรรม์ — มีเฉพาะใบเสร็จค่าเบี้ยประกัน (ทุกช่องว่าง = null ทั้งก้อน) */
-  insurance: z.preprocess(
-    (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null),
-    insuranceSchema.nullable(),
-  ).transform((v) => (v && Object.values(v).some((x) => x !== null) ? v : null)),
   extra: z.preprocess(
     (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}),
     z.record(z.unknown()),

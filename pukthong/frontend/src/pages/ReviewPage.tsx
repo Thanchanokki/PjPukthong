@@ -112,12 +112,9 @@ export default function ReviewPage() {
       setItems((xs) => applyMerchantDefault(xs, merchantTypes.find((t) => t.id === v)));
     }
   };
-  /** ใบประกันภัยไม่มีรายการสินค้า — ข้อมูลกรมธรรม์อยู่ในกล่องข้อมูลร้านค้าแทน */
-  const noItems = merchantTypes.find((t) => t.id === form.merchant_type)?.no_items ?? false;
-
-  /** ใบที่สแกนต้องมีรายการสินค้าอย่างน้อย 1 รายการ (ยกเว้นใบประกันภัย) — backend ก็บังคับเหมือนกัน */
-  const missingItems = !noItems && !items.some((it) => money(it.amount) !== null);
-  const totals = computeTotals(noItems ? [] : items, billDiscounts, form);
+  /** ใบที่สแกนต้องมีรายการสินค้าอย่างน้อย 1 รายการ — backend ก็บังคับเหมือนกัน */
+  const missingItems = !items.some((it) => money(it.amount) !== null);
+  const totals = computeTotals(items, billDiscounts, form);
   const payable = totals.hasItems ? totals.payable : money(form.total);
   const conf = result?.scan_confidence;
   const closeHow = useCallback(() => setShowHow(false), []);
@@ -160,7 +157,7 @@ export default function ReviewPage() {
       )}
 
       {result && !reading && (
-        <ReviewGlance form={form} items={noItems ? [] : items} billDiscounts={billDiscounts} onGoTo={goTo} />
+        <ReviewGlance form={form} items={items} billDiscounts={billDiscounts} onGoTo={goTo} />
       )}
 
       {result?.unsupported && dismissed && (
@@ -181,12 +178,10 @@ export default function ReviewPage() {
       )}
 
       <StoreSection form={form} onChange={set} warn={warn} />
-      {!noItems && (
-        <ItemsSection items={items} setItems={setItems} incomplete={result ? !result.draft.line_items_complete : false} />
-      )}
+      <ItemsSection items={items} setItems={setItems} incomplete={result ? !result.draft.line_items_complete : false} />
       <DiscountVatSection form={form} onChange={set} billDiscounts={billDiscounts} setBillDiscounts={setBillDiscounts} />
       <PaymentSection form={form} onChange={set} warn={warn} />
-      <SummaryCard form={form} onChange={set} items={noItems ? [] : items} billDiscounts={billDiscounts} warn={warn} />
+      <SummaryCard form={form} onChange={set} items={items} billDiscounts={billDiscounts} warn={warn} />
 
       {result && (
         <button
