@@ -32,12 +32,12 @@ export const settings = {
   // KKU IntelSphere
   kkuBaseUrl: str("KKU_BASE_URL", "https://gen.ai.kku.ac.th/api/v1"),
   kkuApiKey: str("KKU_API_KEY", ""),
-  kkuVisionModel: str("KKU_VISION_MODEL", "gemini-2.5-flash"),
+  kkuVisionModel: str("KKU_VISION_MODEL", "gemini-3.8-flash"),
 
   // Typhoon OCR (OpenAI-compatible) — ว่างไว้ = ปิด OCR แต่แอปยังทำงานได้ปกติ
   typhoonOcrApiKey: str("TYPHOON_OCR_API_KEY", ""),
   typhoonOcrBaseUrl: str("TYPHOON_OCR_BASE_URL", "https://api.opentyphoon.ai/v1"),
-  typhoonOcrModel: str("TYPHOON_OCR_MODEL", "typhoon-ocr"),
+  typhoonOcrModel: str("TYPHOON_OCR_MODEL", "typhoon-ocr-v2"),
   /** ต่ำกว่านี้ถือว่า OCR อ่านได้ไม่ดี — ใช้เตือนผู้ใช้ ไม่ได้ใช้บล็อกอะไร */
   ocrQualityThreshold: flt("OCR_QUALITY_THRESHOLD", 0.75),
 
