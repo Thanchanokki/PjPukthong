@@ -4,16 +4,10 @@ import { Logo } from "./Logo";
 
 export type TermsSection = "terms" | "privacy";
 
-/**
- * ⚠️ TODO: ค่าที่ยังต้องกรอกเป็นข้อมูลจริงก่อนเปิดใช้งานจริง — ห้ามเดาเอง เพราะเป็นข้อความ
- * ทางกฎหมายที่ผูกพันกับผู้ใช้ ตอนนี้แสดงเป็นป้ายสีเหลืองให้เห็นชัดว่ายังไม่ได้กรอก
- */
-const TODO = {
-  /** ลบข้อมูลภายในกี่วันหลังผู้ใช้ขอปิดบัญชี */
-  retentionDays: "[ระบุจำนวนวัน]",
-  contactEmail: "[อีเมลติดต่อ]",
-  contactAddress: "[ที่อยู่สำหรับติดต่อ]",
-} as const;
+/** ลบข้อมูลภายในกี่วันหลังผู้ใช้ขอปิดบัญชี — ข้อความทางกฎหมาย แก้ต้องเปลี่ยน LAST_UPDATED ด้วย */
+const RETENTION_DAYS = 30;
+/** ช่องทางเดียวสำหรับแจ้งปัญหาการใช้งาน ขอปิดบัญชี และใช้สิทธิตาม PDPA */
+const CONTACT_EMAIL = "pukthong.official@gmail.com";
 
 /** วันที่ข้อความฉบับนี้มีผล — แก้ทุกครั้งที่เนื้อหาเปลี่ยน */
 const LAST_UPDATED = "19 พฤศจิกายน 2569";
@@ -176,7 +170,7 @@ export function TermsPrivacyModal({
 
             <Clause title="2.4 ระยะเวลาการเก็บรักษาข้อมูล">
               เราเก็บรักษาข้อมูลของท่านตลอดระยะเวลาที่ใช้งานบัญชี
-              และจะลบหรือทำให้ไม่สามารถระบุตัวตนได้ภายใน <Todo>{TODO.retentionDays}</Todo>{" "}
+              และจะลบหรือทำให้ไม่สามารถระบุตัวตนได้ภายใน {RETENTION_DAYS}{" "}
               วันหลังจากท่านขอปิดบัญชีหรือลบข้อมูล เว้นแต่กฎหมายกำหนดให้เก็บไว้นานกว่านั้น
             </Clause>
             <Clause title="2.5 สิทธิของเจ้าของข้อมูลส่วนบุคคล">
@@ -189,9 +183,11 @@ export function TermsPrivacyModal({
               ข้อมูลส่งผ่านการเชื่อมต่อที่เข้ารหัส (HTTPS) และผู้ใช้แต่ละคนเข้าถึงได้เฉพาะข้อมูลของตนเอง
             </Clause>
             <Clause title="2.7 ช่องทางติดต่อ">
-              หากมีข้อสงสัยเกี่ยวกับนโยบายนี้ หรือต้องการใช้สิทธิของเจ้าของข้อมูล
-              ติดต่อเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลได้ที่ <Todo>{TODO.contactEmail}</Todo> หรือ{" "}
-              <Todo>{TODO.contactAddress}</Todo>
+              หากพบปัญหาการใช้งาน มีข้อสงสัยเกี่ยวกับนโยบายนี้ ต้องการขอปิดบัญชี
+              หรือต้องการใช้สิทธิของเจ้าของข้อมูล ติดต่อได้ทางอีเมล{" "}
+              <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-ink underline">
+                {CONTACT_EMAIL}
+              </a>
             </Clause>
           </section>
         </div>
@@ -228,9 +224,4 @@ function Clause({ title, children }: { title: string; children: React.ReactNode 
       <div className="text-[13px] leading-relaxed text-ink/70">{children}</div>
     </div>
   );
-}
-
-/** ช่องที่ยังไม่ได้กรอกค่าจริง — ทำให้เด่นไว้ จะได้ไม่หลุดขึ้น production โดยไม่มีใครเห็น */
-function Todo({ children }: { children: React.ReactNode }) {
-  return <mark className="rounded bg-brass/25 px-1 text-ink">{children}</mark>;
 }
