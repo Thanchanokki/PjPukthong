@@ -10,7 +10,10 @@
  * ทุกครั้งที่ seed ข้อมูลเก่าจะหลุดหมวดหมด — แก้ชื่อหรือไอคอนตรงนี้ได้ แต่ห้ามแก้ id
  *
  * aliases คือชื่อที่เคยใช้หรือที่ AI ชอบตอบ — ใช้แปลงชื่อเป็น id ทั้งตอนรับผลจาก AI
- * และตอนย้ายข้อมูลเก่าที่เก็บเป็นชื่อหมวด (ก่อนมี collection นี้)
+ * และตอนย้ายข้อมูลเก่าที่เก็บเป็นชื่อหมวด (ก่อนมี collection นี้) — AI มองไม่เห็น aliases
+ *
+ * examples คือตัวอย่างสินค้า/ค่าใช้จ่ายที่แปะต่อท้ายชื่อหมวดใน prompt ให้ AI เห็น
+ * ใส่เฉพาะหมวดที่ AI จัดพลาดบ่อยกับค่าใช้จ่ายของนักศึกษา — ทุกคำเพิ่มความยาว prompt ทุกครั้งที่สแกน
  */
 
 export interface SystemCategory {
@@ -19,6 +22,7 @@ export interface SystemCategory {
   icon: string;
   color: string;
   aliases: string[];
+  examples?: string[];
 }
 
 export const SYSTEM_CATEGORIES: SystemCategory[] = [
@@ -30,8 +34,16 @@ export const SYSTEM_CATEGORIES: SystemCategory[] = [
   { id: "transport", name: "การเดินทาง", icon: "🚗", color: "#6366F1", aliases: ["เดินทาง", "น้ำมัน", "ค่าที่จอดรถ"] },
   { id: "apparel", name: "ช้อปปิ้ง", icon: "🛍️", color: "#8B5CF6", aliases: ["เสื้อผ้าและเครื่องประดับ", "เสื้อผ้า", "เครื่องประดับ", "แฟชั่น"] },
   { id: "electronics", name: "เครื่องใช้ไฟฟ้าและไอที", icon: "💻", color: "#64748B", aliases: ["ไอที", "อุปกรณ์อิเล็กทรอนิกส์"] },
-  { id: "housing", name: "บิลและบริการ", icon: "🧾", color: "#EF4444", aliases: ["ที่พักและสาธารณูปโภค", "ค่าเช่า", "ค่าน้ำ", "ค่าไฟ", "ค่าโทรศัพท์"] },
-  { id: "education", name: "การศึกษา", icon: "📚", color: "#14B8A6", aliases: ["เครื่องเขียน", "หนังสือ"] },
+  {
+    id: "housing", name: "บิลและบริการ", icon: "🧾", color: "#EF4444",
+    aliases: ["ที่พักและสาธารณูปโภค", "ค่าเช่า", "ค่าน้ำ", "ค่าไฟ", "ค่าโทรศัพท์", "ค่าหอ", "ค่าหอพัก", "ค่าเน็ต", "ค่าอินเทอร์เน็ต", "ค่าโทรศัพท์รายเดือน"],
+    examples: ["ค่าหอ", "ค่าน้ำค่าไฟ", "ค่าเน็ต", "ค่าโทรศัพท์รายเดือน"],
+  },
+  {
+    id: "education", name: "การศึกษา", icon: "📚", color: "#14B8A6",
+    aliases: ["เครื่องเขียน", "หนังสือ", "ค่าเทอม", "ค่าธรรมเนียมการศึกษา", "ถ่ายเอกสาร", "ปริ้นงาน", "ปริ้นท์งาน", "พิมพ์งาน", "ชีท", "ชีทเรียน"],
+    examples: ["ค่าเทอม", "ถ่ายเอกสาร", "ปริ้นงาน", "ชีทเรียน", "เครื่องเขียน", "หนังสือ"],
+  },
   { id: "entertainment", name: "บันเทิงและงานอดิเรก", icon: "🎮", color: "#F97316", aliases: ["บันเทิง", "ของเล่น", "ท่องเที่ยว"] },
   { id: "pets", name: "สัตว์เลี้ยง", icon: "🐾", color: "#84CC16", aliases: [] },
   { id: "other", name: "อื่นๆ", icon: "📦", color: "#94A3B8", aliases: ["อื่น ๆ", "อื่น"] },
@@ -43,6 +55,14 @@ export const SYSTEM_CATEGORIES: SystemCategory[] = [
  * ต้องเป็นหมวดกลางเสมอ ผู้ใช้ทุกคนจึงเห็นหมวดนี้ใน dashboard และเลือกในฟอร์มได้
  */
 export const FALLBACK_ID = "other";
+
+/** ชื่อหมวดใน prompt ของ AI — มีตัวอย่างแสดงเป็น "การศึกษา (เช่น ค่าเทอม, ถ่ายเอกสาร)" */
+export const promptName = (name: string, examples: string[] = []) =>
+  examples.length ? `${name} (เช่น ${examples.join(", ")})` : name;
+
+/** ตัด "(เช่น …)" ท้ายชื่อออก เผื่อ AI ลอกชื่อหมวดจาก prompt มาทั้งวงเล็บ */
+export const stripExamples = (value: unknown) =>
+  typeof value === "string" ? value.replace(/\s*\(เช่น[^)]*\)\s*$/, "") : value;
 
 /** ข้อมูลขั้นต่ำที่ใช้จับคู่ชื่อ — ทั้ง CategoryDoc และ SystemCategory มีครบ */
 export interface Matchable {
