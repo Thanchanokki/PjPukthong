@@ -69,7 +69,7 @@ import { prepareForOcr, requestOcr } from "../modules/receipts/ocr.provider.js";
 import { enrich } from "../modules/receipts/receipts.enrich.js";
 import { parseDraft } from "../modules/receipts/receipts.schema.js";
 import { unsupportedReason } from "../modules/receipts/receipts.support.js";
-import { SYSTEM_CATEGORIES, matchCategory } from "../shared/categories.js";
+import { SYSTEM_CATEGORIES, matchCategory, promptName, stripExamples } from "../shared/categories.js";
 import { normalizeKind } from "../shared/discounts.js";
 import { MERCHANT_TYPES, categoryForItem, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
 import { Decimal } from "../shared/money.js";
@@ -312,7 +312,7 @@ type BillDiscount = { kind: string; amount: string };
 type Truth = TruthRow & { itemList: Item[]; billList: BillDiscount[]; hasCategories: boolean };
 
 /** id ของหมวดกลาง (shared/categories.ts) — ในเฉลยใช้ id หรือชื่อไทยก็ได้ */
-const categoryId = (v: string) => matchCategory(v, SYSTEM_CATEGORIES);
+const categoryId = (v: string) => matchCategory(stripExamples(v), SYSTEM_CATEGORIES);
 const categoryName = (id: string | null) =>
   id === null ? "(ไม่ได้จัดหมวด)" : (SYSTEM_CATEGORIES.find((c) => c.id === id)?.name ?? id);
 
@@ -680,7 +680,8 @@ const TRUTH_TYPE_LABEL: Record<string, string> = {
 
 // ------------------------------------------------------------------ ประเมินทีละใบ
 
-const categoryList = SYSTEM_CATEGORIES.map((c) => c.name).join(" | ");
+// รูปแบบเดียวกับ CategoryBook.promptList ของแอป (หมวดกลางล้วน ไม่มีหมวดที่ผู้ใช้สร้าง)
+const categoryList = SYSTEM_CATEGORIES.map((c) => promptName(c.name, c.examples)).join(" | ");
 const ocrFile = (r: { file: string; size: number; run: number }) =>
   path.join(RAW, "ocr", `${path.parse(r.file).name}__${r.size}px__r${r.run}.txt`);
 
