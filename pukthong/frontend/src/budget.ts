@@ -19,6 +19,8 @@ export type BudgetLine = {
   color: string | null;
   /** null = มีรายจ่ายในเดือนนั้น แต่ยังไม่ได้ตั้งงบ */
   limit: string | null;
+  /** ใช้ทุกเดือน — เดือนถัดไปที่ยังไม่ได้ตั้งงบหมวดนี้จะใช้วงเงินนี้ต่อ */
+  recurring: boolean;
   spent: string;
   /** จำนวนรายการสินค้าในหมวดนี้ (ทั้งสองแกน) */
   count: number;
@@ -50,13 +52,15 @@ export async function saveBudgetLimit(
   axis: BudgetAxis,
   categoryId: string,
   limit: number,
+  /** ไม่ส่ง = คงค่า "ใช้ทุกเดือน" เดิมของหมวดนี้ */
+  recurring?: boolean,
 ): Promise<void> {
   if (!(limit > 0)) throw new Error("วงเงินต้องมากกว่า 0 บาท");
   return handle(
     await fetch(`${API_BASE}/api/budgets/${month}/${categoryId}?${q(axis)}`, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ limit: limit.toFixed(2) }),
+      body: JSON.stringify({ limit: limit.toFixed(2), recurring }),
     }),
   );
 }

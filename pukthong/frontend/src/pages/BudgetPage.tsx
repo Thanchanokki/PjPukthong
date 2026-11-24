@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, type FormEvent, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { type Transaction, baht, fetchMonthly } from "../api";
 import {
   type BudgetAxis,
   type BudgetLine,
-  type BudgetOption,
   copyBudget,
   fetchBudget,
   removeBudgetLimit,
@@ -14,6 +13,7 @@ import {
 } from "../budget";
 import { FALLBACK, labelOf } from "../categories";
 import { type BudgetItem, BudgetItemsDialog } from "../components/BudgetItemsDialog";
+import { PlusIcon } from "../components/icons";
 
 /**
  * หน้างบประมาณ — ธีม "ม้วนใบเสร็จ" (paper/ink/stamp/ledger/kraft จาก tailwind.config)
@@ -245,13 +245,13 @@ export default function BudgetPage() {
           )}
 
           {options.length > 0 && (
-            <AddBudget
-              label={axis === "merchant" ? "ตั้งงบตามประเภทร้าน" : "ตั้งงบตามหมวดสินค้า"}
-              categories={options}
-              lines={lines}
-              busy={busy}
-              onSave={(categoryId, limit) => save.mutate({ categoryId, limit })}
-            />
+            <Link
+              to={`/budget/new?month=${month}&by=${axis}`}
+              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border-2 border-dashed border-kraft bg-white text-sm font-semibold text-stamp hover:border-stamp/50"
+            >
+              <PlusIcon className="h-5 w-5" aria-hidden="true" />
+              {axis === "merchant" ? "ตั้งงบตามประเภทร้าน" : "ตั้งงบตามหมวดสินค้า"}
+            </Link>
           )}
         </>
       )}
@@ -453,7 +453,7 @@ function EmptyBudget({
     <section className="rounded-xl bg-paper px-5 py-6">
       <h2 className="font-semibold">ยังไม่ได้ตั้งงบเดือน{monthLabel(month)}</h2>
       <p className="mt-1 text-sm text-ink/65">
-        เลือกหมวดใน "ตั้งงบหมวดอื่น" ด้านล่าง หรือกด "ตั้งงบ" ที่หมวดที่มีรายจ่ายแล้ว
+        กดปุ่มตั้งงบด้านล่าง หรือกด "ตั้งงบ" ที่หมวดที่มีรายจ่ายแล้ว
         จากนั้นระบบจะเทียบกับรายจ่ายจากใบเสร็จให้ทุกครั้งที่บันทึก
       </p>
       {onCopy && (
@@ -504,7 +504,14 @@ function BudgetRow({
         className="block w-full px-4 py-3.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-stamp"
       >
         <div className="flex items-baseline gap-3">
-          <span className="min-w-0 flex-1 truncate font-medium">{line.category}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {line.category}
+            {line.recurring && (
+              <span className="ml-2 rounded-full bg-mist px-2 py-0.5 align-middle text-[11px] font-medium text-pine">
+                ทุกเดือน
+              </span>
+            )}
+          </span>
           <span className="font-mono text-sm tabular-nums">
             ฿{baht(spent)}
             <span className="text-ink/40"> / {baht(limit)}</span>
@@ -583,66 +590,6 @@ function UnbudgetedRow({
         />
       )}
     </li>
-  );
-}
-
-function AddBudget({
-  label,
-  categories,
-  lines,
-  busy,
-  onSave,
-}: {
-  label: string;
-  categories: BudgetOption[];
-  /** บรรทัดงบของเดือนนี้ — ใช้บอกวงเงิน/ยอดเดิมในดรอปดาวน์ และเติมวงเงินเดิมตอนเลือก */
-  lines: BudgetLine[];
-  busy: boolean;
-  /** ส่ง id ของหมวด ไม่ใช่ชื่อ — ชื่อหมวดเปลี่ยนได้ แต่ id ไม่เปลี่ยน */
-  onSave: (categoryId: string, limit: number) => void;
-}) {
-  const [category, setCategory] = useState("");
-  const lineOf = (id: string) => lines.find((l) => l.category_id === id);
-  const hint = (id: string) => {
-    const l = lineOf(id);
-    if (l?.limit) return ` · ตั้งไว้ ฿${baht(l.limit)}`;
-    if (l && Number(l.spent) > 0) return ` · ใช้ไป ฿${baht(l.spent)}`;
-    return "";
-  };
-
-  return (
-    <section>
-      <label htmlFor="add-budget-category" className="mb-2 block text-sm font-medium text-ink/60">
-        {label}
-      </label>
-      <select
-        id="add-budget-category"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        className="w-full rounded-lg border border-kraft bg-white px-3 py-2 text-sm focus:border-stamp focus:outline-none focus:ring-1 focus:ring-stamp"
-      >
-        <option value="">เลือกหมวด</option>
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>
-            {labelOf(c)}
-            {hint(c.id)}
-          </option>
-        ))}
-      </select>
-      {category && (
-        <LimitEditor
-          key={category}
-          // หมวดที่ตั้งงบไว้แล้วเริ่มจากวงเงินเดิม ให้เห็นว่ากำลังแก้ ไม่ใช่ตั้งใหม่
-          initial={lineOf(category)?.limit ? String(Number(lineOf(category)!.limit)) : ""}
-          busy={busy}
-          onSave={(limit) => {
-            onSave(category, limit);
-            setCategory("");
-          }}
-          onCancel={() => setCategory("")}
-        />
-      )}
-    </section>
   );
 }
 

@@ -24,7 +24,7 @@ export default async function budgetsController(app: FastifyInstance) {
     ),
   );
 
-  app.put<{ Params: Params; Querystring: Query; Body: { limit?: unknown } }>(
+  app.put<{ Params: Params; Querystring: Query; Body: { limit?: unknown; recurring?: unknown } }>(
     "/api/budgets/:month/:categoryId",
     async (req, reply) => {
       await service.setLimit(
@@ -33,6 +33,7 @@ export default async function budgetsController(app: FastifyInstance) {
         service.toAxis(req.query.by),
         req.params.categoryId,
         req.body?.limit,
+        req.body?.recurring,
       );
       return reply.code(204).send();
     },

@@ -201,6 +201,16 @@ export interface BudgetDoc {
   categoryId: string;
   /** วงเงินเป็น string ทศนิยม 2 ตำแหน่ง ตามกติกาเรื่องเงินด้านบน */
   limit: string;
+  /**
+   * ใช้ทุกเดือน — เดือนหลังจากนี้ที่ไม่มี document ของหมวดนี้ ใช้วงเงินนี้ต่อ (ไม่เขียนลง DB)
+   * ดู budgets.service effectiveLimits
+   */
+  recurring?: boolean;
+  /**
+   * ผู้ใช้ลบงบของเดือนนี้ — เก็บเป็นตัวกั้นแทนการลบ document ทิ้ง
+   * ไม่งั้นงบ "ใช้ทุกเดือน" ของเดือนก่อนจะไหลกลับมาเองทันที
+   */
+  removed?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
