@@ -3,7 +3,7 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { baht } from "../api";
-import { type BudgetAxis, type BudgetOption, fetchBudget, saveBudgetLimit } from "../budget";
+import { type BudgetAxis, type BudgetOption, budgetName, fetchBudget, saveBudgetLimit } from "../budget";
 import { ArrowLeftIcon, PlusIcon } from "../components/icons";
 
 /**
@@ -19,22 +19,7 @@ const PRESETS = [1000, 1500, 2000, 3000];
 /** เกณฑ์เดียวกับ BudgetAlertDialog และแถบสีในหน้างบ */
 const ALERT_RATIO = 0.8;
 
-/** ชื่อสั้นของประเภทร้านให้พอดีการ์ด — ชื่อเต็มยาวเกินช่อง ("ร้านอาหาร/คาเฟ่/เครื่องดื่ม") */
-const SHORT_NAME: Record<string, string> = {
-  convenience: "สะดวกซื้อ",
-  supermarket: "ซูเปอร์มาร์เก็ต",
-  restaurant: "อาหาร / คาเฟ่",
-  pharmacy: "ยา / คลินิก",
-  beauty_personal: "ของใช้ส่วนตัว",
-  department_fashion: "ห้าง / แฟชั่น",
-  home_hardware: "ของใช้ในบ้าน",
-  fuel_transport: "น้ำมัน / เดินทาง",
-  bills_services: "บิล / บริการ",
-  general_other: "อื่น ๆ",
-};
-
-const nameOf = (axis: BudgetAxis, o: BudgetOption) =>
-  (axis === "merchant" && SHORT_NAME[o.id]) || o.name;
+const nameOf = (axis: BudgetAxis, o: BudgetOption) => budgetName(axis, o.id, o.name);
 
 /** เวลาท้องถิ่น — toISOString() เป็น UTC ช่วงตี 0–7 โมงไทยจะได้เดือนผิด */
 const thisMonth = () => {

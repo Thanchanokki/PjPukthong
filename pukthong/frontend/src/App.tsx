@@ -44,8 +44,8 @@ function Shell() {
   // flow สแกน (ถ่าย/ครอบ/ตรวจสอบ) ใช้ด้านล่างจอสำหรับปุ่มถ่ายและแถบยอดสุทธิ — ซ่อนเมนูล่าง
   const { pathname } = useLocation();
   const inScanFlow = pathname.startsWith("/add/scan") || pathname.startsWith("/review/");
-  // หน้าตั้งงบมีปุ่มบันทึกติดล่างจอแทนเมนู
-  const fullScreen = inScanFlow || pathname === "/budget/new";
+  // หน้าตั้งงบและหน้ากรอกเองมีปุ่มบันทึกติดล่างจอแทนเมนู
+  const fullScreen = inScanFlow || pathname === "/budget/new" || pathname === "/manual";
   return (
     <div className="min-h-screen">
       {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่ในหน้าตั้งค่า (เปิดจากไอคอนเฟืองที่

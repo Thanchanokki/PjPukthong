@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { type Monthly, type ScanStats, type Transaction, baht, fetchMonthly, fetchScanStats } from "../api";
+import { type Monthly, type Transaction, baht, fetchMonthly } from "../api";
 import { useAuth } from "../auth";
-import { type BudgetLine, fetchBudget } from "../budget";
+import { type BudgetLine, budgetName, fetchBudget } from "../budget";
 import { currentMonth, dayLabel as purchaseDayLabel, monthOf, monthShort, shiftMonth as shiftMonthBy } from "../dates";
 import {
   CalendarIcon,
@@ -11,7 +11,6 @@ import {
   GearIcon,
   PersonIcon,
   PlusIcon,
-  ReceiptIcon,
 } from "../components/icons";
 
 /**
@@ -93,7 +92,6 @@ export default function HomePage() {
     queryKey: ["monthly", shiftMonthBy(nowMonth, -1), "uploaded"],
     queryFn: () => fetchMonthly(shiftMonthBy(nowMonth, -1), "uploaded"),
   });
-  const scanStats = useQuery({ queryKey: ["scan-stats"], queryFn: fetchScanStats });
   const budget = useQuery({
     queryKey: ["budget", month],
     queryFn: () => fetchBudget(month),
@@ -113,17 +111,9 @@ export default function HomePage() {
   const totalLimit = budgetedLines.length > 0
     ? budgetedLines.reduce((s, l) => s + Number(l.limit), 0)
     : null;
-  /** หมวดที่ใกล้ครบงบ (≥80%) หรือเกินแล้ว — เรียงแย่สุดก่อน ใช้เตือนใต้กรอบทอง */
-  const nearLimit = budgetedLines
-    .filter((l) => Number(l.spent) / Math.max(Number(l.limit), 1) >= 0.8)
-    .sort(
-      (a, b) =>
-        Number(b.spent) / Math.max(Number(b.limit), 1) -
-        Number(a.spent) / Math.max(Number(a.limit), 1),
-    );
-
   return (
-    <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
+    // pb-28: เว้นที่ให้ปุ่ม + ลอย ไม่ให้บังการ์ดสุดท้าย
+    <div className="mx-auto max-w-xl space-y-6 pb-28 text-ink">
       <HomeHeader
         name={user?.name ?? "ผู้ใช้"}
         avatarUrl={user?.avatar_url}
@@ -140,11 +130,13 @@ export default function HomePage() {
         topCategory={topCategory}
       />
 
-      <ScanCountCard stats={scanStats.data} onScan={() => navigate("/add")} />
-
-      {nearLimit.length > 0 && (
-        <BudgetWarning lines={nearLimit} onOpen={() => navigate(`/budget?month=${month}`)} />
-      )}
+      <BudgetWidget
+        pending={budget.isPending}
+        error={budget.isError ? (budget.error as Error).message : null}
+        data={budget.data}
+        onSeeAll={() => navigate(`/budget?month=${month}`)}
+        onSetup={() => navigate(`/budget/new?month=${month}&by=merchant`)}
+      />
 
       <RecentTransactions
         month={month}
@@ -153,13 +145,6 @@ export default function HomePage() {
         transactions={[...(recentNow.data?.transactions ?? []), ...(recentPrev.data?.transactions ?? [])]}
         onSeeAll={() => navigate(`/monthly?month=${month}`)}
         onAdd={() => navigate("/add")}
-      />
-
-      <BudgetWidget
-        pending={budget.isPending}
-        error={budget.isError ? (budget.error as Error).message : null}
-        data={budget.data}
-        onSeeAll={() => navigate(`/budget?month=${month}`)}
       />
 
       {/* ปุ่มลอยเพิ่มรายการ — พาไปหน้าเดิมที่เคยเป็นหน้าแรก (ถ่ายภาพ/อัพโหลด/กรอกเอง) */}
@@ -175,32 +160,6 @@ export default function HomePage() {
         <PlusIcon className="h-7 w-7" />
       </button>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------- จำนวนใบเสร็จ
-
-/** จำนวนใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ — ทั้งหมด และเดือนนี้ (นับตามวันที่สแกน) */
-function ScanCountCard({ stats, onScan }: { stats: ScanStats | undefined; onScan: () => void }) {
-  return (
-    <section className="flex items-center gap-4 rounded-xl border border-kraft bg-white p-4">
-      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-mist text-pine">
-        <ReceiptIcon className="h-6 w-6" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-ink/55">ใบเสร็จที่สแกนแล้ว</p>
-        <p className="text-2xl font-bold tabular-nums">
-          {stats ? stats.scanned_total.toLocaleString("th-TH") : "—"}
-          <span className="ml-1 text-sm font-normal text-ink/55">ใบ</span>
-        </p>
-        <p className="text-xs text-ink/55">
-          เดือนนี้ {stats ? stats.scanned_this_month.toLocaleString("th-TH") : "—"} ใบ
-        </p>
-      </div>
-      <button type="button" onClick={onScan} className="btn shrink-0 bg-pine text-white hover:bg-pine-dark">
-        สแกนเพิ่ม
-      </button>
-    </section>
   );
 }
 
@@ -342,38 +301,26 @@ function SpendHero({
         </p>
       )}
 
-      <p className={`mt-1 text-sm ${over ? "font-medium text-stamp" : "text-ink/70"}`}>
+      {limit !== null && limit > 0 && (
+        <div
+          role="progressbar"
+          aria-label="สัดส่วนที่ใช้ไปจากงบ"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.min(Math.round((spent / limit) * 100), 100)}
+          className="mt-3 h-2 overflow-hidden rounded-full bg-ink/15"
+        >
+          <div
+            className={`h-full rounded-full ${over ? "bg-stamp" : "bg-ledger"}`}
+            style={{ width: `${Math.min((spent / limit) * 100, 100)}%` }}
+          />
+        </div>
+      )}
+
+      <p className={`mt-2 text-sm ${over ? "font-semibold text-stamp" : "text-ink/70"}`}>
         {budgetLine}
       </p>
     </section>
-  );
-}
-
-/** แถบเตือนหมวดที่ใกล้/เกินงบ — แตะพาไปหน้างบประมาณ กดดูรายละเอียดได้ทันที */
-function BudgetWarning({
-  lines,
-  onOpen,
-}: {
-  lines: BudgetLine[];
-  onOpen: () => void;
-}) {
-  const worst = lines[0];
-  const worstOver = Number(worst.spent) > Number(worst.limit);
-  const message =
-    lines.length === 1
-      ? `${worst.category} ${worstOver ? "เกินงบแล้ว" : "ใกล้ครบงบแล้ว"} ฿${baht(worst.spent)} / ฿${baht(worst.limit)}`
-      : `มี ${lines.length} หมวดใกล้หรือเกินงบแล้ว เริ่มจาก${worst.category}`;
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-2.5 rounded-xl border border-stamp/30 bg-stamp/5 px-4 py-3 text-left text-sm text-stamp hover:bg-stamp/10"
-    >
-      <span className="grid h-2 w-2 shrink-0 place-items-center rounded-full bg-stamp" aria-hidden />
-      <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
-      <span className="shrink-0 text-xs text-stamp/70">ดูงบ ›</span>
-    </button>
   );
 }
 
@@ -452,7 +399,7 @@ function RecentTransactions({
                 )}
               </div>
               <span className="shrink-0 tabular-nums font-semibold text-stamp">
-                -{baht(tx.total)}
+                −฿{baht(tx.total)}
               </span>
             </li>
           ))}
@@ -464,92 +411,86 @@ function RecentTransactions({
 
 // ---------------------------------------------------------------- งบประมาณ
 
-const R = 44;
-const STROKE = 16;
-const CIRC = 2 * Math.PI * R;
-const GAP = 3;
-/** สีเดียวกับโดนัทในหน้ารายงาน (stamp/brass/ledger) — ให้สองหน้าดูเป็นระบบเดียวกัน */
-const SLICE_COLOR = ["stroke-stamp", "stroke-brass", "stroke-ledger"];
-const DOT_COLOR = ["bg-stamp", "bg-brass", "bg-ledger"];
-
 type Budget = Awaited<ReturnType<typeof fetchBudget>>;
 
+/**
+ * งบรายหมวดแบบแถบ — แทนโดนัทเดิมที่ชื่อหมวดยาวจนล้นการ์ด และรวมแถบเตือนหมวดเกินงบไว้ในตัว
+ * โชว์ 3 หมวดที่ใช้ไปเป็นสัดส่วนสูงสุด (เกินงบขึ้นก่อน) ดูครบที่หน้างบประมาณ
+ */
 function BudgetWidget({
   pending,
   error,
   data,
   onSeeAll,
+  onSetup,
 }: {
   pending: boolean;
   error: string | null;
   data: Budget | undefined;
   onSeeAll: () => void;
+  onSetup: () => void;
 }) {
-  // เอาเฉพาะหมวดที่ตั้งงบไว้แล้ว เรียงยอดใช้จริงมากไปน้อย โชว์ 3 หมวดแรกให้ไม่รก
-  // เหมือนภาพรวม ดูละเอียดทั้งหมดได้ที่หน้างบประมาณ
+  const ratio = (l: BudgetLine) => Number(l.spent) / Math.max(Number(l.limit), 1);
   const top = [...(data?.lines ?? [])]
     .filter((l) => l.limit !== null)
-    .sort((a, b) => Number(b.spent) - Number(a.spent))
+    .sort((a, b) => ratio(b) - ratio(a))
     .slice(0, 3);
-  const total = top.reduce((s, l) => s + Number(l.spent), 0);
 
   return (
-    <section className="rounded-xl border border-kraft bg-white p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold">งบประมาณเดือนนี้</h2>
+    <section className="rounded-xl border border-kraft bg-white">
+      <div className="flex items-center justify-between px-4 py-3">
+        <h2 className="text-sm font-bold">งบรายหมวด</h2>
         <button type="button" onClick={onSeeAll} className="text-xs font-medium text-stamp">
           ดูทั้งหมด
         </button>
       </div>
 
-      {pending && <p className="mt-3 text-sm text-ink/50">กำลังโหลด…</p>}
-      {error && <p className="mt-3 text-sm text-stamp">{error}</p>}
+      {pending && <p className="px-4 pb-4 text-sm text-ink/60">กำลังโหลด…</p>}
+      {error && <p className="px-4 pb-4 text-sm text-stamp">{error}</p>}
 
       {!pending && !error && top.length === 0 && (
-        <p className="mt-3 text-sm text-ink/50">ยังไม่ได้ตั้งงบเดือนนี้</p>
+        <div className="px-4 pb-4">
+          <p className="text-sm text-ink/60">ยังไม่ได้ตั้งงบเดือนนี้</p>
+          <button
+            type="button"
+            onClick={onSetup}
+            className="mt-2 rounded-lg border border-dashed border-stamp/40 px-3 py-1.5 text-sm font-medium text-stamp hover:bg-stamp/5"
+          >
+            + ตั้งงบหมวดแรก
+          </button>
+        </div>
       )}
 
       {!pending && !error && top.length > 0 && (
-        <div className="mt-4 flex items-center gap-5">
-          <svg viewBox="0 0 110 110" className="h-24 w-24 shrink-0 -rotate-90">
-            {(() => {
-              let offset = 0;
-              return top.map((l, i) => {
-                const value = Number(l.spent);
-                const len = total > 0 ? (value / total) * CIRC : 0;
-                const gap = top.length > 1 ? GAP : 0;
-                const circle = (
-                  <circle
-                    key={l.category}
-                    cx={55}
-                    cy={55}
-                    r={R}
-                    fill="none"
-                    strokeWidth={STROKE}
-                    className={SLICE_COLOR[i % SLICE_COLOR.length]}
-                    strokeDasharray={`${Math.max(len - gap, 0)} ${CIRC}`}
-                    strokeDashoffset={-offset}
+        <ul className="space-y-3.5 px-4 pb-4">
+          {top.map((l) => {
+            const spent = Number(l.spent);
+            const limit = Number(l.limit);
+            const over = spent > limit;
+            const near = !over && spent / Math.max(limit, 1) >= 0.8;
+            return (
+              <li key={l.category_id}>
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-semibold">
+                    {budgetName(data!.axis, l.category_id, l.category)}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs tabular-nums text-ink/75">
+                    ฿{baht(spent)} / {baht(limit)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink/10">
+                  <div
+                    className={`h-full rounded-full ${over ? "bg-stamp" : near ? "bg-brass" : "bg-ledger"}`}
+                    style={{ width: `${Math.min((spent / Math.max(limit, 1)) * 100, 100)}%` }}
                   />
-                );
-                offset += len;
-                return circle;
-              });
-            })()}
-          </svg>
-
-          <ul className="flex-1 space-y-2">
-            {top.map((l, i) => (
-              <li key={l.category} className="flex items-center gap-2 text-sm">
-                <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT_COLOR[i % DOT_COLOR.length]}`}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate text-ink/75">{l.category}</span>
-                <span className="shrink-0 tabular-nums font-medium">{baht(l.spent)}</span>
+                </div>
+                <p className={`mt-1 text-xs ${over ? "font-semibold text-stamp" : "text-ink/65"}`}>
+                  {over ? `เกินงบ ฿${baht(spent - limit)}` : `เหลือ ฿${baht(limit - spent)}`}
+                </p>
               </li>
-            ))}
-          </ul>
-        </div>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

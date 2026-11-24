@@ -39,6 +39,24 @@ export type Budget = {
 /** prefix ของ key ใน sessionStorage ที่จำว่าป๊อปอัพเตือนงบเด้งไปแล้ว — auth.tsx ล้างตอนออกจากระบบ */
 export const BUDGET_ALERT_KEY = "budget-alert:";
 
+/** ชื่อสั้นของประเภทร้านให้พอดีการ์ด/แถบงบ — ชื่อเต็มยาวเกิน ("ร้านเครื่องสำอางและของใช้ส่วนตัว") */
+const SHORT_NAME: Record<string, string> = {
+  convenience: "สะดวกซื้อ",
+  supermarket: "ซูเปอร์มาร์เก็ต",
+  restaurant: "อาหาร / คาเฟ่",
+  pharmacy: "ยา / คลินิก",
+  beauty_personal: "ของใช้ส่วนตัว",
+  department_fashion: "ห้าง / แฟชั่น",
+  home_hardware: "ของใช้ในบ้าน",
+  fuel_transport: "น้ำมัน / เดินทาง",
+  bills_services: "บิล / บริการ",
+  general_other: "อื่น ๆ",
+};
+
+/** ชื่อที่แสดงของบรรทัดงบ — แกนประเภทร้านใช้ชื่อสั้น แกนหมวดสินค้าใช้ชื่อหมวดตามเดิม */
+export const budgetName = (axis: BudgetAxis, id: string, name: string) =>
+  (axis === "merchant" && SHORT_NAME[id]) || name;
+
 const q = (axis: BudgetAxis) => (axis === "merchant" ? "by=merchant" : "by=item");
 
 export async function fetchBudget(month: string, axis: BudgetAxis = "merchant"): Promise<Budget> {
