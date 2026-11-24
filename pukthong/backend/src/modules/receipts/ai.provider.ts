@@ -8,6 +8,8 @@ import OpenAI from "openai";
 import sharp from "sharp";
 
 import { settings } from "../../config/index.js";
+import { httpError } from "../../shared/errors.js";
+import { thaiDate } from "../../shared/quota.js";
 import { merchantTypePrompt } from "../../shared/merchant-types.js";
 
 /**
@@ -142,8 +144,77 @@ async function shrinkForAi(jpegBytes: Buffer): Promise<Buffer> {
   return out;
 }
 
-/** เรียก API ไม่สำเร็จ (key ผิด เน็ตล่ม โมเดลไม่รับรูป) — ข้อความเป็นภาษาไทย */
-export class AIUnavailable extends Error {}
+/**
+ * เรียก API ไม่สำเร็จ (key ผิด เน็ตล่ม โมเดลไม่รับรูป โควตาหมด) — ข้อความภาษาไทยที่แสดงให้ผู้ใช้เห็นได้เลย
+ * status = HTTP ที่ตอบผู้ใช้: 429 โควตาหมด, 502 บริการภายนอกขัดข้อง
+ */
+export class AIUnavailable extends Error {
+  readonly status: number;
+
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
+    super(message, { cause: options?.cause });
+    this.status = options?.status ?? 502;
+  }
+}
+
+const QUOTA_MESSAGE =
+  "วันนี้ AI ของระบบถูกใช้ครบโควตาแล้ว ใช้ต่อได้พรุ่งนี้ ระหว่างนี้กรอกข้อมูลเองต่อจากหน้านี้ได้";
+
+/**
+ * โควตารวมของ KKU IntelSphere (ต่อ API key ต่อวัน ใช้ร่วมกันทุกผู้ใช้)
+ *
+ * IntelSphere แนบ model_quota.daily_remaining_tokens มากับทุกคำตอบ — จำค่าล่าสุดไว้
+ * ถ้าเหลือไม่พออ่านอีกหนึ่งใบ ปฏิเสธตั้งแต่ก่อนเรียก แทนที่จะส่งรูปไปแล้วโดน error กลับมา
+ * ข้ามวัน (เวลาไทย) แล้วลืมค่าเดิม ปล่อยให้คำขอถัดไปไปอ่านโควตาใหม่จากคำตอบเอง
+ */
+const TOKENS_PER_SCAN = 8_000;
+let quotaLeft: { tokens: number; day: string } | null = null;
+
+function rememberQuota(resp: unknown) {
+  const q = (resp as { model_quota?: { daily_remaining_tokens?: unknown } }).model_quota;
+  const tokens = Number(q?.daily_remaining_tokens);
+  if (q && Number.isFinite(tokens)) quotaLeft = { tokens, day: thaiDate() };
+}
+
+/** โยน 429 ถ้ารู้แล้วว่าโควตาวันนี้เหลือไม่พออ่านอีกหนึ่งใบ — ไม่รู้ (ยังไม่เคยเรียก) ก็ปล่อยผ่าน */
+export function assertAiQuotaLeft(): void {
+  if (quotaLeft && quotaLeft.day === thaiDate() && quotaLeft.tokens < TOKENS_PER_SCAN) {
+    throw httpError(429, QUOTA_MESSAGE);
+  }
+}
+
+/** แปลง error จาก SDK เป็นข้อความที่ผู้ใช้อ่านเข้าใจ — รายละเอียดทางเทคนิคไปอยู่ใน log */
+function describeFailure(err: unknown, model: string): AIUnavailable {
+  const opts = { cause: err };
+  if (err instanceof OpenAI.APIError) {
+    const detail = `${JSON.stringify(err.error ?? "")} ${err.message}`;
+    if (err.status === 429 || /quota/i.test(detail)) {
+      quotaLeft = { tokens: 0, day: thaiDate() };
+      return new AIUnavailable(QUOTA_MESSAGE, { ...opts, status: 429 });
+    }
+    if (/invalid model/i.test(detail)) {
+      return new AIUnavailable(
+        `ระบบตั้งค่าโมเดล AI ไม่ถูกต้อง ('${model}' ไม่มีให้บริการแล้ว) แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกข้อมูลเองได้`,
+        opts,
+      );
+    }
+    if (err.status === 401 || err.status === 403) {
+      return new AIUnavailable("ระบบเชื่อมต่อ AI ไม่ได้ (API key ไม่ถูกต้อง) แจ้งผู้ดูแลระบบ ระหว่างนี้กรอกข้อมูลเองได้", opts);
+    }
+    if (err.status !== undefined && err.status >= 500) {
+      return new AIUnavailable("บริการ AI ของมหาวิทยาลัยขัดข้องชั่วคราว ลองกดอ่านใหม่อีกครั้งในอีกสักครู่ หรือกรอกข้อมูลเอง", opts);
+    }
+    // APIConnectionError (และ timeout) ไม่มี status
+    if (err.status === undefined) {
+      return new AIUnavailable("เชื่อมต่อบริการ AI ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง หรือกรอกข้อมูลเอง", opts);
+    }
+  }
+  const name = err instanceof Error ? err.constructor.name : "Error";
+  return new AIUnavailable(
+    `เรียก AI ไม่สำเร็จ (${name}) — ตรวจ KKU_API_KEY และดูว่าโมเดล '${model}' รับรูปภาพได้จริงหรือไม่`,
+    opts,
+  );
+}
 
 function client(): OpenAI {
   if (!settings.kkuApiKey) {
@@ -242,14 +313,10 @@ export async function extractReceipt(
     });
   } catch (err) {
     if (err instanceof AIUnavailable) throw err;
-    const name = err instanceof Error ? err.constructor.name : "Error";
     console.error("เรียก KKU vision ไม่สำเร็จ", err);
-    throw new AIUnavailable(
-      `เรียก AI ไม่สำเร็จ (${name}) — ` +
-        `ตรวจ KKU_API_KEY และดูว่าโมเดล '${model}' รับรูปภาพได้จริงหรือไม่`,
-      { cause: err },
-    );
+    throw describeFailure(err, model);
   }
+  rememberQuota(resp);
 
   if (!resp.choices?.length) {
     throw new AIUnavailable("AI ไม่ได้ตอบกลับมา ลองใหม่อีกครั้ง");

@@ -20,7 +20,7 @@ const counts = new Map<string, number>();
 let countedDay = "";
 
 /** วันที่ตามเวลาไทย — ตัดรอบตอนเที่ยงคืนของผู้ใช้ ไม่ใช่เที่ยงคืน UTC (= 7 โมงเช้าเวลาไทย) */
-const thaiDate = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+export const thaiDate = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
 
 /** ตัวนับของวันนี้ — ข้ามวันแล้วล้างของเมื่อวานทิ้งทั้งหมด */
 function todayCounts(): Map<string, number> {

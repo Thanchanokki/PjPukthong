@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { settings } from "../../config/index.js";
 import { requireUuid } from "../../shared/errors.js";
 import { assertQuota, useQuota } from "../../shared/quota.js";
+import { assertAiQuotaLeft } from "./ai.provider.js";
 import { readImageUpload } from "../../shared/upload.js";
 import { requireAuth, requireAuthAllowQueryToken } from "../auth/auth.security.js";
 import { receiptRawOut } from "./receipts.serializer.js";
@@ -48,6 +49,8 @@ export default async function receiptsController(app: FastifyInstance) {
     async (req) => {
       const id = requireUuid(req.params.receiptId, "receipt_id");
       assertQuota(req.userId, "ai", settings.dailyAiLimit);
+      // โควตารวมของทั้งระบบหมดแล้ว — ปฏิเสธก่อนหักโควตาของผู้ใช้ เพราะเขาไม่ได้ใช้ AI จริง
+      assertAiQuotaLeft();
       // นับก่อนเรียก — เรียกแล้วเสียค่า API แม้ AI จะตอบไม่สำเร็จ
       useQuota(req.userId, "ai");
       return service.extract(req.userId, id);

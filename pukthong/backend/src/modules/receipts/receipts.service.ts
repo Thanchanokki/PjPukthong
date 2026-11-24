@@ -165,7 +165,7 @@ export async function extract(userId: string, receiptId: string) {
   } catch (err) {
     if (err instanceof ai.AIUnavailable) {
       await receipts.updateOne({ _id: receiptId }, { $set: { status: "failed" } });
-      throw httpError(502, err.message, err);
+      throw httpError(err.status, err.message, err);
     }
     throw err;
   }
