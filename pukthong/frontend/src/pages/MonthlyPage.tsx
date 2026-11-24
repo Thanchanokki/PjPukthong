@@ -1,86 +1,95 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
-import {
-  type DateAxis,
-  Transaction,
-  baht,
-  deleteTransaction,
-  fetchMonthly,
-} from "../api";
-import { AxisToggle, UploadedAxisNotice } from "../components/AxisToggle";
+import { Transaction, baht, deleteTransaction, fetchMonthly, fetchMonths } from "../api";
+import { ChevronRightIcon } from "../components/icons";
+import { currentMonth, dayLabel, isoDate, monthName, monthShort, shiftMonth, shortDate } from "../dates";
 
-const thisMonth = () => new Date().toISOString().slice(0, 7);
-
+/**
+ * รายการรายเดือน — จัดตาม "วันที่ซื้อ" เสมอ ยอดจึงตรงกับหน้ารายงานและหน้างบ
+ *
+ * เดิมมีปุ่มสลับ "เดือนที่ซื้อ / เดือนที่สแกน" แต่ผู้ใช้ไม่เข้าใจความต่าง และพอสลับแล้ว
+ * ยอดไม่ตรงกับหน้าอื่น จึงเอาออก — ใบที่สแกนย้อนหลังบอกด้วยบรรทัด "สแกนเมื่อ" แทน
+ */
 export default function MonthlyPage() {
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") ?? thisMonth();
+  const month = params.get("month") ?? currentMonth();
   const qc = useQueryClient();
-  /**
-   * แกนเวลาที่ใช้ตีความคำว่า "เดือนนี้" — ดู db/models.ts ฝั่ง backend
-   * เปลี่ยนแล้วได้คนละชุดข้อมูล ไม่ใช่แค่คนละลำดับ
-   *
-   * เก็บใน URL เหมือนหน้าสรุป เพื่อให้สลับสองหน้าแล้วยังดูมุมมองเดิมอยู่
-   */
-  const axis: DateAxis = params.get("by") === "uploaded" ? "uploaded" : "purchased";
-
-  const setQuery = (next: { month?: string; by?: DateAxis }) =>
-    setParams({ month: next.month ?? month, by: next.by ?? axis });
+  const goTo = (m: string) => setParams({ month: m });
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ["monthly", month, axis],
-    queryFn: () => fetchMonthly(month, axis),
+    queryKey: ["monthly", month, "purchased"],
+    queryFn: () => fetchMonthly(month, "purchased"),
   });
+  // ใช้บอกว่าข้อมูลอยู่เดือนไหนตอนเดือนที่เปิดว่างเปล่า — โหลดเฉพาะตอนจำเป็น
+  const months = useQuery({
+    queryKey: ["months", "purchased"],
+    queryFn: () => fetchMonths("purchased"),
+    enabled: data !== undefined && data.transactions.length === 0,
+  });
+  const latest = [...(months.data ?? [])].filter((m) => m.count > 0).sort((a, b) => b.month.localeCompare(a.month))[0];
 
   const remove = useMutation({
     mutationFn: deleteTransaction,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["monthly", month] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["monthly"] }),
   });
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setQuery({ month: e.target.value })}
-          className="field w-44"
-        />
-        <AxisToggle value={axis} onChange={(by) => setQuery({ by })} />
-      </div>
+  // จัดกลุ่มตามวันที่ซื้อ ใหม่สุดก่อน — ในวันเดียวกันเรียงตามเวลาบนใบเสร็จ
+  const groups: { date: string; txs: Transaction[] }[] = [];
+  for (const tx of [...(data?.transactions ?? [])].sort(
+    (a, b) =>
+      b.purchased_at.localeCompare(a.purchased_at) ||
+      (b.purchased_time ?? "").localeCompare(a.purchased_time ?? ""),
+  )) {
+    const last = groups[groups.length - 1];
+    if (last?.date === tx.purchased_at) last.txs.push(tx);
+    else groups.push({ date: tx.purchased_at, txs: [tx] });
+  }
 
-      {isPending && <p className="text-sm text-slate-500">กำลังโหลด…</p>}
+  return (
+    <div className="mx-auto max-w-xl space-y-4 text-ink">
+      <header className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => goTo(shiftMonth(month, -1))}
+          aria-label="เดือนก่อน"
+          className="grid h-11 w-11 place-items-center rounded-xl border border-kraft bg-white"
+        >
+          <ChevronRightIcon className="h-5 w-5 rotate-180" aria-hidden="true" />
+        </button>
+        <div className="text-center">
+          <h1 className="text-lg font-bold">{monthName(month)}</h1>
+          <p className="text-xs text-ink/65">ตามวันที่ซื้อ</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => goTo(shiftMonth(month, 1))}
+          aria-label="เดือนถัดไป"
+          className="grid h-11 w-11 place-items-center rounded-xl border border-kraft bg-white"
+        >
+          <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </header>
+
+      {isPending && <p className="text-sm text-ink/60">กำลังโหลด…</p>}
       {isError && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-stamp/40 bg-stamp/5 p-3 text-sm text-stamp">
           {(error as Error).message}
         </div>
       )}
 
-      {data && (
+      {data && data.transactions.length > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <Stat
-              label={
-                data.axis === "uploaded" ? "ยอดรวมของใบที่สแกนเดือนนี้" : "รายจ่ายรวม"
-              }
-              value={`฿${baht(data.expense_total)}`}
-            />
-            <Stat label="จำนวนรายการ" value={`${data.transaction_count}`} />
+          <div className="flex items-baseline justify-between rounded-xl border border-kraft bg-white px-4 py-3">
+            <span className="text-sm text-ink/65">รายจ่ายรวม · {data.transaction_count} รายการ</span>
+            <span className="font-mono text-xl font-bold tabular-nums">฿{baht(data.expense_total)}</span>
           </div>
 
-          {data.axis === "uploaded" && <UploadedAxisNotice />}
-
-          <div className="rounded-xl border border-slate-200 bg-white">
-            <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-medium">
-              รายการทั้งหมด ({data.transactions.length})
-            </h2>
-            {data.transactions.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">
-                ยังไม่มีรายการในเดือนนี้
-              </p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {data.transactions.map((tx) => (
+          {groups.map((g) => (
+            <section key={g.date}>
+              <h2 className="mb-1.5 px-1 text-sm font-semibold text-ink/65">{dayLabel(g.date)}</h2>
+              <ul className="divide-y divide-kraft/70 overflow-hidden rounded-xl border border-kraft bg-white">
+                {g.txs.map((tx) => (
                   <Row
                     key={tx.id}
                     tx={tx}
@@ -90,59 +99,65 @@ export default function MonthlyPage() {
                   />
                 ))}
               </ul>
-            )}
-          </div>
+            </section>
+          ))}
         </>
       )}
-    </div>
-  );
-}
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{value}</p>
+      {data && data.transactions.length === 0 && (
+        <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <h2 className="text-lg font-semibold">เดือนนี้ยังไม่มีรายการ</h2>
+          <p className="text-sm leading-relaxed text-ink/65">
+            ระบบจัดรายการตามวันที่บนใบเสร็จ ถ้าเพิ่งสแกนใบเก่า รายการจะอยู่ในเดือนที่ซื้อ
+          </p>
+          {latest && latest.month !== month && (
+            <button
+              type="button"
+              onClick={() => goTo(latest.month)}
+              className="flex min-h-[48px] items-center gap-2 rounded-xl border border-kraft bg-white px-5 font-semibold text-pine"
+            >
+              รายการล่าสุดอยู่ใน {monthShort(latest.month)}
+              <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function Row({ tx, onDelete }: { tx: Transaction; onDelete: () => void }) {
+  // uploaded_at เป็นเวลา UTC — แปลงเป็นวันที่ท้องถิ่นก่อนเทียบ ไม่งั้นช่วงตี 0–7 โมงวันจะเลื่อน
+  const scannedOn = isoDate(new Date(tx.uploaded_at));
   return (
-    <li className="flex items-center gap-3 px-4 py-3 text-sm">
+    <li className="flex items-center gap-3 px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">
-          {tx.merchant_name ?? "(ไม่ระบุร้าน)"}
+        <p className="truncate font-semibold">{tx.merchant_name ?? "(ไม่ระบุร้าน)"}</p>
+        <p className="text-xs text-ink/65">
+          {tx.purchased_time ? `${tx.purchased_time.slice(0, 5)} น.` : "ไม่ระบุเวลา"}
+          {tx.category && ` · ${tx.category}`}
+          {tx.items.length > 0 && ` · ${tx.items.length} ชิ้น`}
         </p>
-        <p className="text-xs text-slate-500">
-          ซื้อ {tx.purchased_at}
-          {tx.payment_method && ` · ${tx.payment_method}`}
-          {tx.items.length > 0 && ` · ${tx.items.length} รายการ`}
-        </p>
-        {/* เวลาที่ระบบรับรู้ — แสดงเฉพาะเมื่อต่างจากวันที่ซื้อ เพื่อไม่ให้รก
-            และช่วยให้เห็นทันทีว่าใบไหนถ่ายย้อนหลัง (หรือ AI อ่านปีผิด) */}
-        {tx.uploaded_at.slice(0, 10) !== tx.purchased_at && (
-          <p className="text-xs text-slate-400">
-            สแกนเข้าระบบ {tx.uploaded_at.slice(0, 10)}
-          </p>
+        {/* วันที่สแกนเป็นข้อมูลรอง — แสดงเฉพาะใบที่สแกนย้อนหลัง (หรือ AI อ่านปีผิด) */}
+        {scannedOn !== tx.purchased_at && (
+          <p className="text-[11px] text-ink/55">สแกนเมื่อ {shortDate(scannedOn)}</p>
         )}
       </div>
-      <span className="tabular-nums font-medium text-slate-900">
-        ฿{baht(tx.total)}
-      </span>
+      <span className="shrink-0 font-mono font-bold tabular-nums text-stamp">−฿{baht(tx.total)}</span>
       {tx.receipt_id && (
-        <a
-          href={`/review/${tx.receipt_id}`}
-          className="text-slate-400 hover:text-teal-700"
-          title="ดูใบเสร็จ"
+        <Link
+          to={`/review/${tx.receipt_id}`}
+          aria-label="ดูใบเสร็จ"
+          className="grid h-9 w-9 place-items-center rounded-lg text-ink/55 hover:bg-ink/5 hover:text-pine"
         >
-          
-        </a>
+          <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+        </Link>
       )}
       <button
+        type="button"
         onClick={onDelete}
-        className="text-slate-400 hover:text-red-600"
-        title="ลบรายการ"
+        aria-label="ลบรายการ"
+        className="grid h-9 w-9 place-items-center rounded-lg text-ink/55 hover:bg-stamp/10 hover:text-stamp"
       >
         ✕
       </button>

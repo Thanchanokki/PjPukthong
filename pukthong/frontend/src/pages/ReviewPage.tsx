@@ -9,7 +9,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { BillDiscount, ExtractResult, LineItem, createTransaction, extractReceipt, imageUrl } from "../api";
+import { BillDiscount, ExtractResult, LineItem, type Transaction, createTransaction, extractReceipt, imageUrl } from "../api";
+import { SavedOtherMonthDialog } from "../components/DateNotes";
+import { currentMonth, monthOf } from "../dates";
 import { useMerchantTypes } from "../categories";
 import {
   DiscountVatSection,
@@ -79,8 +81,13 @@ export default function ReviewPage() {
   const save = useMutation({
     mutationFn: () => createTransaction(buildPayload(form, items, receiptId, billDiscounts)),
     // บันทึกเสร็จแล้วพาไปหน้าสรุปทันที — ให้เห็นเลยว่ารายจ่ายก้อนนี้ไปอยู่หมวดไหน
-    onSuccess: (tx) => navigate(`/dashboard?month=${tx.purchased_at.slice(0, 7)}`),
+    // ยกเว้นใบที่ซื้อคนละเดือนกับเดือนนี้: แจ้งก่อนว่ายอดไปอยู่เดือนไหน ไม่งั้นดูเหมือนข้อมูลหาย
+    onSuccess: (tx) =>
+      monthOf(tx.purchased_at) === currentMonth()
+        ? navigate(`/dashboard?month=${monthOf(tx.purchased_at)}`)
+        : setSavedOther(tx),
   });
+  const [savedOther, setSavedOther] = useState<Transaction | null>(null);
 
   // มาจากขั้นครอบและส่ง -> อ่านให้เลยครั้งเดียว
   useEffect(() => {
@@ -126,6 +133,13 @@ export default function ReviewPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-28">
+      {savedOther && (
+        <SavedOtherMonthDialog
+          purchasedAt={savedOther.purchased_at}
+          merchant={savedOther.merchant_name}
+          total={savedOther.total}
+        />
+      )}
       {result?.unsupported && !dismissed && (
         <UnsupportedDialog info={result.unsupported} onRescan={() => navigate("/add")} onContinue={closeDialog} />
       )}

@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { type Monthly, type ScanStats, type Transaction, baht, fetchMonthly, fetchScanStats } from "../api";
 import { useAuth } from "../auth";
 import { type BudgetLine, fetchBudget } from "../budget";
+import { currentMonth, dayLabel as purchaseDayLabel, monthOf, monthShort, shiftMonth as shiftMonthBy } from "../dates";
 import {
   CalendarIcon,
   ChevronDownIcon,
@@ -43,23 +44,6 @@ const monthLabel = (month: string) => {
   return `${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
 };
 
-/** วันนี้ / เมื่อวาน / dd เดือนย่อ — ใช้บอกว่ารายการล่าสุดเกิดขึ้นเมื่อไหร่ */
-const MONTHS_SHORT = [
-  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-];
-function dayLabel(dateStr: string): string {
-  const now = new Date();
-  const todayStr = toMonth(now) + "-" + pad(now.getDate());
-  const y = new Date(now);
-  y.setDate(y.getDate() - 1);
-  const yesterdayStr = toMonth(y) + "-" + pad(y.getDate());
-  if (dateStr === todayStr) return "วันนี้";
-  if (dateStr === yesterdayStr) return "เมื่อวาน";
-  const d = new Date(dateStr);
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
-}
-
 /** สวัสดีตอนเช้า/บ่าย/เย็น ตามเวลาปัจจุบันของเครื่อง */
 function greeting(): string {
   const h = new Date().getHours();
@@ -95,6 +79,19 @@ export default function HomePage() {
   const prevMonthly = useQuery({
     queryKey: ["monthly", prevMonth, "purchased"],
     queryFn: () => fetchMonthly(prevMonth, "purchased"),
+  });
+  /**
+   * "เพิ่งบันทึก" ใช้เดือนที่สแกน/บันทึก (uploaded) ของเดือนนี้กับเดือนก่อน ไม่ใช่เดือนที่ซื้อ —
+   * ใบเก่าที่เพิ่งสแกนต้องขึ้นบนสุด ไม่งั้นผู้ใช้หาสิ่งที่เพิ่งทำไม่เจอ (ยอดเงินยังนับตามวันที่ซื้อ)
+   */
+  const nowMonth = currentMonth();
+  const recentNow = useQuery({
+    queryKey: ["monthly", nowMonth, "uploaded"],
+    queryFn: () => fetchMonthly(nowMonth, "uploaded"),
+  });
+  const recentPrev = useQuery({
+    queryKey: ["monthly", shiftMonthBy(nowMonth, -1), "uploaded"],
+    queryFn: () => fetchMonthly(shiftMonthBy(nowMonth, -1), "uploaded"),
   });
   const scanStats = useQuery({ queryKey: ["scan-stats"], queryFn: fetchScanStats });
   const budget = useQuery({
@@ -151,9 +148,9 @@ export default function HomePage() {
 
       <RecentTransactions
         month={month}
-        pending={monthly.isPending}
-        error={monthly.isError ? (monthly.error as Error).message : null}
-        transactions={monthly.data?.transactions}
+        pending={recentNow.isPending}
+        error={recentNow.isError ? (recentNow.error as Error).message : null}
+        transactions={[...(recentNow.data?.transactions ?? []), ...(recentPrev.data?.transactions ?? [])]}
         onSeeAll={() => navigate(`/monthly?month=${month}`)}
         onAdd={() => navigate("/add")}
       />
@@ -318,7 +315,7 @@ function SpendHero({
       className="rounded-2xl bg-gradient-to-br from-[#ECC87A] via-brass to-[#AD7D26] px-5 py-5 text-ink shadow-md shadow-brass/25"
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-ink/70">ใช้จ่ายเดือนนี้</p>
+        <p className="text-sm font-medium text-ink/70">ใช้จ่ายเดือนนี้ <span className="text-xs font-normal">(ตามวันที่ซื้อ)</span></p>
         {changePct !== null && (
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
@@ -382,6 +379,12 @@ function BudgetWarning({
 
 // ---------------------------------------------------------------- รายการล่าสุด
 
+/** "ซื้อวันนี้" · "ซื้อเมื่อวาน" · "ซื้อ จ. 17 พ.ย. 69" */
+const purchasedText = (date: string) => {
+  const label = purchaseDayLabel(date);
+  return label === "วันนี้" || label === "เมื่อวาน" ? `ซื้อ${label}` : `ซื้อ ${label}`;
+};
+
 function RecentTransactions({
   month,
   pending,
@@ -398,20 +401,16 @@ function RecentTransactions({
   onAdd: () => void;
 }) {
   void month;
-  // ใหม่สุดก่อน — purchased_at เรียงเป็น string 'YYYY-MM-DD' เทียบ lexical ได้ตรงๆ
-  // purchased_time อาจเป็น null จึงต้องกันไว้ตอนเทียบรอง
+  // บันทึกล่าสุดก่อน — uploaded_at เป็น ISO datetime เทียบ lexical ได้ตรงๆ
   const recent = [...(transactions ?? [])]
-    .sort((a, b) => {
-      const byDate = b.purchased_at.localeCompare(a.purchased_at);
-      if (byDate !== 0) return byDate;
-      return (b.purchased_time ?? "").localeCompare(a.purchased_time ?? "");
-    })
+    .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at) || b.created_at.localeCompare(a.created_at))
     .slice(0, 3);
+  const nowMonth = currentMonth();
 
   return (
     <section className="rounded-xl border border-kraft bg-white">
       <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-bold">รายการล่าสุด</h2>
+        <h2 className="text-sm font-bold">เพิ่งบันทึก</h2>
         <button type="button" onClick={onSeeAll} className="text-xs font-medium text-stamp">
           ดูทั้งหมด
         </button>
@@ -422,7 +421,7 @@ function RecentTransactions({
 
       {!pending && !error && recent.length === 0 && (
         <div className="px-4 pb-4">
-          <p className="text-sm text-ink/50">ยังไม่มีรายการในเดือนนี้</p>
+          <p className="text-sm text-ink/60">ยังไม่มีรายการที่บันทึกล่าสุด</p>
           <button
             type="button"
             onClick={onAdd}
@@ -441,11 +440,16 @@ function RecentTransactions({
                 <p className="truncate text-sm font-semibold">
                   {tx.merchant_name ?? "(ไม่ระบุร้าน)"}
                 </p>
-                <p className="text-xs text-ink/50">
-                  {dayLabel(tx.purchased_at)}
-                  {tx.purchased_time && ` ${tx.purchased_time.slice(0, 5)}`}
+                <p className="text-xs text-ink/65">
+                  {purchasedText(tx.purchased_at)}
+                  {tx.purchased_time && ` · ${tx.purchased_time.slice(0, 5)} น.`}
                   {tx.category && ` · ${tx.category}`}
                 </p>
+                {monthOf(tx.purchased_at) !== nowMonth && (
+                  <span className="mt-1 inline-block rounded-full bg-brass/25 px-2 py-0.5 text-[11px] font-medium text-ink">
+                    นับในยอดเดือน {monthShort(monthOf(tx.purchased_at))}
+                  </span>
+                )}
               </div>
               <span className="shrink-0 tabular-nums font-semibold text-stamp">
                 -{baht(tx.total)}

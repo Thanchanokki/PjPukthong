@@ -2,7 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { BillDiscount, LineItem, baht, createTransaction } from "../api";
+import { BillDiscount, LineItem, type Transaction, baht, createTransaction } from "../api";
+import { SavedOtherMonthDialog } from "../components/DateNotes";
+import { currentMonth, monthOf } from "../dates";
 import { ArrowLeftIcon } from "../components/icons";
 import { useMerchantTypes } from "../categories";
 import {
@@ -39,6 +41,7 @@ export default function ManualPage() {
   const [items, setItems] = useState<LineItem[]>(() => [emptyItem()]);
   const [billDiscounts, setBillDiscounts] = useState<BillDiscount[]>([]);
   const [saved, setSaved] = useState<{ total: string; count: number } | null>(null);
+  const [savedOther, setSavedOther] = useState<Transaction | null>(null);
 
   const save = useMutation({
     mutationFn: (opts: { andNew: boolean }) =>
@@ -46,7 +49,9 @@ export default function ManualPage() {
     onSuccess: ({ tx, opts }) => {
       if (!opts.andNew) {
         // บันทึกเสร็จแล้วพาไปหน้าสรุปทันที — ให้เห็นเลยว่ารายจ่ายก้อนนี้ไปอยู่หมวดไหน
-        navigate(`/dashboard?month=${tx.purchased_at.slice(0, 7)}`);
+        // วันที่คนละเดือนกับเดือนนี้: แจ้งก่อนว่ายอดไปอยู่เดือนไหน
+        if (monthOf(tx.purchased_at) === currentMonth()) navigate(`/dashboard?month=${monthOf(tx.purchased_at)}`);
+        else setSavedOther(tx);
         return;
       }
       // กรอกต่อ: ล้างฟอร์มแต่คงชนิดรายการกับวันที่ไว้ เพราะมักกรอกหลายใบของวันเดียวกัน
@@ -77,6 +82,13 @@ export default function ManualPage() {
 
   return (
     <div className="mx-auto -mt-6 max-w-2xl space-y-4 pb-4">
+      {savedOther && (
+        <SavedOtherMonthDialog
+          purchasedAt={savedOther.purchased_at}
+          merchant={savedOther.merchant_name}
+          total={savedOther.total}
+        />
+      )}
       {/* Header เข้ม + ปุ่มย้อนกลับ — ตามธีมของ mockup (docs/pukthong-uxui-mockup.html)
           ต่างจากหน้าอื่นที่ใช้ header อ่อนของ Shell เพราะหน้านี้ตั้งใจแยกโหมด
           "กรอกเอง" ให้รู้สึกต่างจากโหมด OCR ชัดเจน */}
