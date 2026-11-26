@@ -17,6 +17,7 @@ import {
   repriceItem,
 } from "./FormFields";
 import { type Form, emptyItem } from "./TransactionForm";
+import { DateSanityNote } from "./DateNotes";
 import { CardIcon, ListLinesIcon, PercentIcon, StoreIcon, XIcon } from "./icons";
 
 type OnChange = (k: keyof Form) => (v: string) => void;
@@ -454,7 +455,7 @@ export function PaymentSection({ form, onChange, warn }: { form: Form; onChange:
         </div>
         <div className="grid grid-cols-[1fr_7.5rem] gap-3">
           <MField
-            label="วันที่บนใบเสร็จ"
+            label="วันที่ซื้อ (ตามใบเสร็จ)"
             type="date"
             required
             value={form.purchased_at}
@@ -463,6 +464,7 @@ export function PaymentSection({ form, onChange, warn }: { form: Form; onChange:
           />
           <MField label="เวลา" type="time" value={form.purchased_time} onChange={onChange("purchased_time")} />
         </div>
+        <DateSanityNote date={form.purchased_at} onFix={onChange("purchased_at")} />
         <MField label="หมายเหตุ" value={form.note} onChange={onChange("note")} placeholder="ไม่บังคับ" />
       </div>
     </Section>

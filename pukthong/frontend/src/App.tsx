@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { BottomNav } from "./components/BottomNav";
 import { BudgetAlertDialog } from "./components/BudgetAlertDialog";
 import BudgetPage from "./pages/BudgetPage";
+import BudgetSetupPage from "./pages/BudgetSetupPage";
 import CapturePage from "./pages/CapturePage";
 import ScanPage from "./pages/ScanPage";
 import CategoriesPage from "./pages/CategoriesPage";
@@ -43,13 +44,15 @@ function Shell() {
   // flow สแกน (ถ่าย/ครอบ/ตรวจสอบ) ใช้ด้านล่างจอสำหรับปุ่มถ่ายและแถบยอดสุทธิ — ซ่อนเมนูล่าง
   const { pathname } = useLocation();
   const inScanFlow = pathname.startsWith("/add/scan") || pathname.startsWith("/review/");
+  // หน้าตั้งงบและหน้ากรอกเองมีปุ่มบันทึกติดล่างจอแทนเมนู
+  const fullScreen = inScanFlow || pathname === "/budget/new" || pathname === "/manual";
   return (
     <div className="min-h-screen">
       {/* ไม่มีแถบบนสุดแล้ว — ปุ่มออกจากระบบย้ายไปอยู่ในหน้าตั้งค่า (เปิดจากไอคอนเฟืองที่
           หน้าหลัก) เมนูนำทางไปหน้าอื่น (ถ่ายใบเสร็จ/กรอกเอง/สรุป/รายการ) อยู่ที่ bottom nav */}
 
       {/* pb-24 กันเนื้อหาไม่ให้ถูก BottomNav (fixed) บัง — ปรับตัวเลขถ้าความสูง nav เปลี่ยน */}
-      <main className={`mx-auto max-w-6xl px-4 pt-6 ${inScanFlow ? "pb-10" : "pb-24"}`}>
+      <main className={`mx-auto max-w-6xl px-4 pt-6 ${fullScreen ? "pb-10" : "pb-24"}`}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/add" element={<CapturePage />} />
@@ -58,17 +61,18 @@ function Shell() {
           <Route path="/manual" element={<ManualPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/monthly" element={<MonthlyPage />} />
-           <Route path="/budget" element={<BudgetPage />} />
+          <Route path="/budget" element={<BudgetPage />} />
+          <Route path="/budget/new" element={<BudgetSetupPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      {!inScanFlow && <BottomNav />}
+      {!fullScreen && <BottomNav />}
 
       {/* เตือนงบใกล้หมด/เกินงบ ครั้งเดียวหลังเข้าสู่ระบบ — ไม่เด้งทับกล้องระหว่างสแกน */}
-      {!inScanFlow && <BudgetAlertDialog />}
+      {!fullScreen && <BudgetAlertDialog />}
     </div>
   );
 }

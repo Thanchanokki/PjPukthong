@@ -1,16 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { type Monthly, type ScanStats, type Transaction, baht, fetchMonthly, fetchScanStats } from "../api";
+import { type Transaction, fetchMonthly } from "../api";
 import { useAuth } from "../auth";
-import { type BudgetLine, fetchBudget } from "../budget";
+import { type BudgetLine, budgetName, fetchBudget } from "../budget";
+import { currentMonth, dayLabel as purchaseDayLabel, monthOf, monthShort, shiftMonth as shiftMonthBy } from "../dates";
 import {
-  CalendarIcon,
   ChevronDownIcon,
   GearIcon,
   PersonIcon,
   PlusIcon,
-  ReceiptIcon,
 } from "../components/icons";
 
 /**
@@ -34,31 +33,31 @@ const shiftMonth = (month: string, n: number) => {
   return toMonth(new Date(d.getFullYear(), d.getMonth() + n, 1));
 };
 
-const THAI_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-];
-const monthLabel = (month: string) => {
+/** ฿ ไม่มีทศนิยม — หน้าแรกเน้นอ่านเร็ว ตัวเลขละเอียดดูได้ในหน้ารายการ */
+const thb = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+
+const daysIn = (month: string) => {
   const d = parseMonth(month);
-  return `${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
 };
 
-/** วันนี้ / เมื่อวาน / dd เดือนย่อ — ใช้บอกว่ารายการล่าสุดเกิดขึ้นเมื่อไหร่ */
-const MONTHS_SHORT = [
-  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-];
-function dayLabel(dateStr: string): string {
-  const now = new Date();
-  const todayStr = toMonth(now) + "-" + pad(now.getDate());
-  const y = new Date(now);
-  y.setDate(y.getDate() - 1);
-  const yesterdayStr = toMonth(y) + "-" + pad(y.getDate());
-  if (dateStr === todayStr) return "วันนี้";
-  if (dateStr === yesterdayStr) return "เมื่อวาน";
-  const d = new Date(dateStr);
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+/** วันสุดท้ายที่นับยอดของเดือนนั้น: เดือนนี้ = วันนี้, เดือนที่ผ่านแล้ว = สิ้นเดือน, เดือนหน้า = 0 */
+function cutoffDay(month: string): number {
+  const current = toMonth(new Date());
+  if (month < current) return daysIn(month);
+  if (month > current) return 0;
+  return new Date().getDate();
 }
+
+/** "1–25 พ.ย." หรือ "ทั้งเดือน ต.ค." */
+function rangeLabel(month: string, day: number): string {
+  const short = monthShort(month).split(" ")[0];
+  return day >= daysIn(month) ? `ทั้งเดือน ${short}` : `1–${day} ${short}`;
+}
+
+/** เกณฑ์สีเดียวกันทั้งแอป (หน้างบ ป๊อปอัพเตือน): ถึง 80% = ใกล้ครบ, เกิน 100% = เกินงบ */
+const toneOf = (ratio: number) => (ratio > 1 ? "over" : ratio >= 0.8 ? "near" : "ok");
+const BAR = { over: "bg-stamp", near: "bg-brass", ok: "bg-ledger" } as const;
 
 /** สวัสดีตอนเช้า/บ่าย/เย็น ตามเวลาปัจจุบันของเครื่อง */
 function greeting(): string {
@@ -96,114 +95,103 @@ export default function HomePage() {
     queryKey: ["monthly", prevMonth, "purchased"],
     queryFn: () => fetchMonthly(prevMonth, "purchased"),
   });
-  const scanStats = useQuery({ queryKey: ["scan-stats"], queryFn: fetchScanStats });
+  /**
+   * "เพิ่งบันทึก" ใช้เดือนที่สแกน/บันทึก (uploaded) ของเดือนนี้กับเดือนก่อน ไม่ใช่เดือนที่ซื้อ —
+   * ใบเก่าที่เพิ่งสแกนต้องขึ้นบนสุด ไม่งั้นผู้ใช้หาสิ่งที่เพิ่งทำไม่เจอ (ยอดเงินยังนับตามวันที่ซื้อ)
+   */
+  const nowMonth = currentMonth();
+  const recentNow = useQuery({
+    queryKey: ["monthly", nowMonth, "uploaded"],
+    queryFn: () => fetchMonthly(nowMonth, "uploaded"),
+  });
+  const recentPrev = useQuery({
+    queryKey: ["monthly", shiftMonthBy(nowMonth, -1), "uploaded"],
+    queryFn: () => fetchMonthly(shiftMonthBy(nowMonth, -1), "uploaded"),
+  });
   const budget = useQuery({
     queryKey: ["budget", month],
     queryFn: () => fetchBudget(month),
   });
 
   const expense = Number(monthly.data?.expense_total ?? 0);
-  const prevExpense = Number(prevMonthly.data?.expense_total ?? 0);
-  const changePct = prevMonthly.isSuccess && prevExpense > 0
-    ? Math.round(((expense - prevExpense) / prevExpense) * 100)
-    : null;
 
-  const topCategory = [...(monthly.data?.by_category ?? [])].sort(
-    (a, b) => Number(b.total) - Number(a.total),
-  )[0];
+  /**
+   * เทียบ "ช่วงเดียวกัน" ของเดือนก่อน — เดิมเอายอดถึงวันนี้ไปเทียบกับยอดทั้งเดือนของเดือนก่อน
+   * ต้นเดือนจึงดูว่าใช้น้อยเสมอ และตัวเลขอย่าง +197% ไม่บอกว่าเทียบกับอะไร
+   */
+  const day = cutoffDay(month);
+  const prevDay = day >= daysIn(month) ? daysIn(prevMonth) : Math.min(day, daysIn(prevMonth));
+  const sumUpTo = (txs: Transaction[] | undefined, upTo: number) =>
+    (txs ?? []).filter((t) => Number(t.purchased_at.slice(8, 10)) <= upTo).reduce((s, t) => s + Number(t.total), 0);
+  const compare =
+    monthly.isSuccess && prevMonthly.isSuccess && day > 0
+      ? {
+          now: sumUpTo(monthly.data.transactions, day),
+          prev: sumUpTo(prevMonthly.data.transactions, prevDay),
+          nowLabel: rangeLabel(month, day),
+          prevLabel: rangeLabel(prevMonth, prevDay),
+        }
+      : null;
 
   const budgetedLines = (budget.data?.lines ?? []).filter((l) => l.limit !== null);
   const totalLimit = budgetedLines.length > 0
     ? budgetedLines.reduce((s, l) => s + Number(l.limit), 0)
     : null;
-  /** หมวดที่ใกล้ครบงบ (≥80%) หรือเกินแล้ว — เรียงแย่สุดก่อน ใช้เตือนใต้กรอบทอง */
-  const nearLimit = budgetedLines
-    .filter((l) => Number(l.spent) / Math.max(Number(l.limit), 1) >= 0.8)
-    .sort(
-      (a, b) =>
-        Number(b.spent) / Math.max(Number(b.limit), 1) -
-        Number(a.spent) / Math.max(Number(a.limit), 1),
-    );
-
   return (
-    <div className="mx-auto max-w-xl space-y-6 pb-4 text-ink">
+    // pb-28: เว้นที่ให้ปุ่ม + ลอย ไม่ให้บังการ์ดสุดท้าย
+    <div className="mx-auto max-w-xl space-y-5 pb-28 text-ink">
       <HomeHeader
         name={user?.name ?? "ผู้ใช้"}
         avatarUrl={user?.avatar_url}
         onSettings={() => navigate("/settings")}
+        month={month}
+        onMonth={(m) => setParams({ month: m })}
       />
-
-      <MonthField month={month} onChange={(m) => setParams({ month: m })} />
 
       <SpendHero
         spent={expense}
         limit={totalLimit}
         daysLeft={daysLeftIn(month)}
-        changePct={changePct}
-        topCategory={topCategory}
+        range={day > 0 ? rangeLabel(month, day) : monthShort(month)}
       />
 
-      <ScanCountCard stats={scanStats.data} onScan={() => navigate("/add")} />
-
-      {nearLimit.length > 0 && (
-        <BudgetWarning lines={nearLimit} onOpen={() => navigate(`/budget?month=${month}`)} />
-      )}
-
-      <RecentTransactions
-        month={month}
-        pending={monthly.isPending}
-        error={monthly.isError ? (monthly.error as Error).message : null}
-        transactions={monthly.data?.transactions}
-        onSeeAll={() => navigate(`/monthly?month=${month}`)}
-        onAdd={() => navigate("/add")}
-      />
+      {compare && <CompareCard {...compare} />}
 
       <BudgetWidget
         pending={budget.isPending}
         error={budget.isError ? (budget.error as Error).message : null}
         data={budget.data}
         onSeeAll={() => navigate(`/budget?month=${month}`)}
+        onSetup={() => navigate(`/budget/new?month=${month}&by=merchant`)}
       />
 
-      {/* ปุ่มลอยเพิ่มรายการ — พาไปหน้าเดิมที่เคยเป็นหน้าแรก (ถ่ายภาพ/อัพโหลด/กรอกเอง) */}
-      <button
-        type="button"
-        onClick={() => navigate("/add")}
-        aria-label="เพิ่มรายการใหม่"
-        className="fixed bottom-24 right-5 z-20 flex h-14 w-14 items-center justify-center
-                   rounded-full bg-stamp text-white shadow-lg shadow-stamp/30 transition
-                   hover:bg-stamp/90 focus-visible:outline focus-visible:outline-2
-                   focus-visible:outline-offset-2 focus-visible:outline-stamp"
-      >
-        <PlusIcon className="h-7 w-7" />
-      </button>
-    </div>
-  );
-}
+      <RecentTransactions
+        month={month}
+        pending={recentNow.isPending}
+        error={recentNow.isError ? (recentNow.error as Error).message : null}
+        transactions={[...(recentNow.data?.transactions ?? []), ...(recentPrev.data?.transactions ?? [])]}
+        onSeeAll={() => navigate(`/monthly?month=${month}`)}
+        onAdd={() => navigate("/add")}
+      />
 
-// ---------------------------------------------------------------- จำนวนใบเสร็จ
-
-/** จำนวนใบเสร็จที่สแกนแล้วบันทึกเป็นรายการ — ทั้งหมด และเดือนนี้ (นับตามวันที่สแกน) */
-function ScanCountCard({ stats, onScan }: { stats: ScanStats | undefined; onScan: () => void }) {
-  return (
-    <section className="flex items-center gap-4 rounded-xl border border-kraft bg-white p-4">
-      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-mist text-pine">
-        <ReceiptIcon className="h-6 w-6" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-ink/55">ใบเสร็จที่สแกนแล้ว</p>
-        <p className="text-2xl font-bold tabular-nums">
-          {stats ? stats.scanned_total.toLocaleString("th-TH") : "—"}
-          <span className="ml-1 text-sm font-normal text-ink/55">ใบ</span>
-        </p>
-        <p className="text-xs text-ink/55">
-          เดือนนี้ {stats ? stats.scanned_this_month.toLocaleString("th-TH") : "—"} ใบ
-        </p>
+      {/* ปุ่มลอยเพิ่มรายการ — พาไปหน้าเลือกสแกน/กรอกเอง (/add)
+          ยึดขอบขวาของคอลัมน์เนื้อหา ไม่ใช่ขอบจอ จอกว้างจะได้ไม่ลอยห่างจากเนื้อหา */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-20">
+        <div className="mx-auto flex max-w-xl justify-end px-4">
+          <button
+            type="button"
+            onClick={() => navigate("/add")}
+            aria-label="เพิ่มรายการใหม่"
+            className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-stamp
+                       text-white shadow-lg shadow-stamp/30 transition hover:bg-stamp/90
+                       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+                       focus-visible:outline-stamp"
+          >
+            <PlusIcon className="h-7 w-7" />
+          </button>
+        </div>
       </div>
-      <button type="button" onClick={onScan} className="btn shrink-0 bg-pine text-white hover:bg-pine-dark">
-        สแกนเพิ่ม
-      </button>
-    </section>
+    </div>
   );
 }
 
@@ -213,8 +201,12 @@ function HomeHeader({
   name,
   avatarUrl,
   onSettings,
+  month,
+  onMonth,
 }: {
   name: string;
+  month: string;
+  onMonth: (month: string) => void;
   /** รูปโปรไฟล์ที่ตั้งไว้ในหน้าตั้งค่า — undefined/null = ยังไม่ได้ตั้ง ใช้ไอคอนคนแทน */
   avatarUrl?: string | null;
   onSettings: () => void;
@@ -225,10 +217,10 @@ function HomeHeader({
         <img
           src={avatarUrl}
           alt=""
-          className="h-12 w-12 shrink-0 rounded-full object-cover"
+          className="h-10 w-10 shrink-0 rounded-full object-cover"
         />
       ) : (
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink/10 text-ink/50">
           <PersonIcon className="h-6 w-6" />
         </span>
       )}
@@ -237,13 +229,33 @@ function HomeHeader({
         <h1 className="truncate text-base font-bold">{name}</h1>
       </div>
 
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onMonth(shiftMonth(month, -1))}
+          aria-label="เดือนก่อน"
+          className="grid h-10 w-10 place-items-center rounded-xl border border-kraft bg-white"
+        >
+          <ChevronDownIcon className="h-4 w-4 rotate-90" />
+        </button>
+        <span className="min-w-[4.75rem] text-center text-sm font-bold">{monthShort(month)}</span>
+        <button
+          type="button"
+          onClick={() => onMonth(shiftMonth(month, 1))}
+          aria-label="เดือนถัดไป"
+          className="grid h-10 w-10 place-items-center rounded-xl border border-kraft bg-white"
+        >
+          <ChevronDownIcon className="h-4 w-4 -rotate-90" />
+        </button>
+      </div>
+
       {/* เฟืองพาไปหน้าตั้งค่า — ออกจากระบบย้ายไปอยู่ในนั้นแล้ว */}
       <button
         type="button"
         onClick={onSettings}
         aria-label="ตั้งค่า"
         title="ตั้งค่า"
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/45 hover:bg-ink/5"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/55 hover:bg-ink/5"
       >
         <GearIcon className="h-5 w-5" />
       </button>
@@ -251,136 +263,129 @@ function HomeHeader({
   );
 }
 
-function MonthField({
-  month,
-  onChange,
-}: {
-  month: string;
-  onChange: (month: string) => void;
-}) {
-  return (
-    <label className="relative inline-flex items-center gap-2 rounded-full border border-kraft bg-white py-2 pl-3.5 pr-3 text-sm font-medium">
-      <CalendarIcon className="h-4 w-4 text-ink/45" />
-      <span>{monthLabel(month)}</span>
-      <ChevronDownIcon className="h-4 w-4 text-ink/35" />
-      {/* input จริงซ้อนโปร่งใสทับทั้งก้อน — คลิกตรงไหนก็เปิด picker ของเบราว์เซอร์
-          ส่วนข้อความที่เห็นเป็นป้ายไทยที่เราจัดรูปแบบเอง ไม่ใช่สิ่งที่ input แสดง */}
-      <input
-        type="month"
-        value={month}
-        onChange={(e) => e.target.value && onChange(e.target.value)}
-        aria-label="เลือกเดือน"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-      />
-    </label>
-  );
-}
-
 // ---------------------------------------------------------------- สรุปรายจ่าย
 
-type CategoryTotal = Monthly["by_category"][number];
-
 /**
- * กรอบทอง — ของเดิมเคยเป็นการ์ดรายรับ/รายจ่าย/คงเหลือ แต่รายรับเป็นค่าจำลองที่ไม่มี
- * ความหมายจริง เปลี่ยนมาเน้นเลขเดียวที่สำคัญที่สุดของแอปสายรายจ่าย: ใช้ไปแล้วเท่าไหร่
- * เดือนนี้ พร้อม insight สั้นๆ 2 บรรทัด — หมวดที่ใช้เยอะสุด แล้วเทียบกับงบที่ตั้งไว้
- * (ไม่มีงบก็แค่ชวนไปตั้ง ไม่ฟ้องเป็นค่าลบลอยๆ) badge % มุมขวาบนเทียบกับเดือนก่อน
+ * กรอบทอง — ยอดใช้จ่ายของเดือน พร้อมบอกช่วงวันที่ที่นับ และใช้ไปกี่ % ของงบรวม
+ * สีแถบใช้เกณฑ์เดียวกับงบรายหมวด (80% = เหลือง, เกินงบ = แดง)
  */
 function SpendHero({
   spent,
   limit,
   daysLeft,
-  changePct,
-  topCategory,
+  range,
 }: {
   spent: number;
   limit: number | null;
   daysLeft: number;
-  changePct: number | null;
-  topCategory: CategoryTotal | undefined;
+  /** "1–25 พ.ย." — ช่วงวันที่ที่ยอดนี้นับ */
+  range: string;
 }) {
+  const ratio = limit ? spent / limit : 0;
   const remaining = limit !== null ? limit - spent : null;
-  const over = remaining !== null && remaining < 0;
-  const perDay = remaining !== null && !over && daysLeft > 0 ? remaining / daysLeft : null;
-
-  const budgetLine =
-    limit === null
-      ? "ยังไม่ได้ตั้งงบเดือนนี้"
-      : over
-        ? `เกินงบที่ตั้งไว้ ฿${baht(-remaining!)}`
-        : perDay !== null
-          ? `เหลือในงบ ฿${baht(remaining!)} · วันละ ฿${baht(perDay)}`
-          : `เหลือในงบ ฿${baht(remaining!)}`;
+  const perDay = remaining !== null && remaining > 0 && daysLeft > 0 ? remaining / daysLeft : null;
 
   return (
     <section
       aria-label="สรุปรายจ่ายเดือนนี้"
       className="rounded-2xl bg-gradient-to-br from-[#ECC87A] via-brass to-[#AD7D26] px-5 py-5 text-ink shadow-md shadow-brass/25"
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-ink/70">ใช้จ่ายเดือนนี้</p>
-        {changePct !== null && (
-          <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-              changePct > 0
-                ? "bg-stamp/15 text-stamp"
-                : changePct < 0
-                  ? "bg-ledger/15 text-ledger"
-                  : "bg-ink/10 text-ink/60"
-            }`}
+      <p className="text-sm font-semibold text-ink/80">ใช้จ่ายเดือนนี้ · {range}</p>
+      <p className="mt-1 font-mono text-4xl font-bold leading-none tabular-nums">{thb(spent)}</p>
+
+      {limit === null ? (
+        <p className="mt-3 text-sm text-ink/75">ยังไม่ได้ตั้งงบเดือนนี้</p>
+      ) : (
+        <>
+          <div
+            role="progressbar"
+            aria-label="สัดส่วนที่ใช้ไปจากงบรวม"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.min(Math.round(ratio * 100), 100)}
+            className="mt-3 h-2.5 overflow-hidden rounded-full bg-ink/15"
           >
-            {changePct > 0 ? "+" : ""}
-            {changePct}% จากเดือนก่อน
-          </span>
-        )}
-      </div>
-
-      <p className="mt-1 font-mono text-4xl font-bold leading-none tabular-nums">
-        ฿{baht(spent)}
-      </p>
-
-      {topCategory && Number(topCategory.total) > 0 && (
-        <p className="mt-2.5 text-sm text-ink/70">
-          ใช้เยอะสุดกับ {topCategory.category} ฿{baht(topCategory.total)}
-        </p>
+            <div
+              className={`h-full rounded-full ${ratio > 1 ? "bg-stamp" : ratio >= 0.8 ? "bg-[#8A5A0B]" : "bg-ledger"}`}
+              style={{ width: `${Math.min(ratio * 100, 100)}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex justify-between gap-3 text-sm">
+            <span>
+              ใช้ไป <strong>{Math.round(ratio * 100)}%</strong> ของงบ {thb(limit)}
+            </span>
+            <span className={remaining! < 0 ? "font-semibold text-stamp" : ""}>
+              {remaining! < 0 ? "เกินงบ " : "เหลือ "}
+              <strong>{thb(Math.abs(remaining!))}</strong>
+            </span>
+          </div>
+          {perDay !== null && (
+            <p className="mt-0.5 text-sm">
+              ใช้ได้อีกวันละ <strong>{thb(perDay)}</strong> ถึงสิ้นเดือน ({daysLeft} วัน)
+            </p>
+          )}
+        </>
       )}
+    </section>
+  );
+}
 
-      <p className={`mt-1 text-sm ${over ? "font-medium text-stamp" : "text-ink/70"}`}>
-        {budgetLine}
+/** เทียบกับช่วงเดียวกันของเดือนก่อน — โชว์ทั้งสองยอดและผลต่างเป็นเงิน ไม่ใช่ % ลอยๆ */
+function CompareCard({
+  now,
+  prev,
+  nowLabel,
+  prevLabel,
+}: {
+  now: number;
+  prev: number;
+  nowLabel: string;
+  prevLabel: string;
+}) {
+  const diff = now - prev;
+  const times = prev > 0 && now / prev >= 1.5 ? ` (ประมาณ ${(now / prev).toFixed(now / prev >= 10 ? 0 : 1).replace(".0", "")} เท่า)` : "";
+  const summary =
+    prev === 0
+      ? now === 0
+        ? "ยังไม่มีรายจ่ายทั้งสองช่วง"
+        : "ช่วงเดียวกันของเดือนก่อนยังไม่มีรายจ่าย"
+      : Math.round(diff) === 0
+        ? "ใช้เท่ากับเดือนก่อน"
+        : diff > 0
+          ? `▲ ใช้มากกว่า ${thb(diff)}${times}`
+          : `▼ ใช้น้อยกว่า ${thb(-diff)}`;
+
+  return (
+    <section aria-label="เทียบกับเดือนก่อน" className="rounded-xl border border-kraft bg-white p-4">
+      <h2 className="text-sm font-bold">เทียบกับช่วงเดียวกันของเดือนก่อน</h2>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-paper px-3 py-2">
+          <p className="text-xs text-ink/65">{prevLabel}</p>
+          <p className="font-mono text-base font-bold tabular-nums">{thb(prev)}</p>
+        </div>
+        <div className="rounded-lg bg-paper px-3 py-2">
+          <p className="text-xs text-ink/65">{nowLabel} (เดือนนี้)</p>
+          <p className="font-mono text-base font-bold tabular-nums">{thb(now)}</p>
+        </div>
+      </div>
+      <p
+        className={`mt-2.5 text-sm font-semibold ${
+          prev > 0 && diff > 0 ? "text-stamp" : prev > 0 && diff < 0 ? "text-ledger" : "text-ink/70"
+        }`}
+      >
+        {summary}
       </p>
     </section>
   );
 }
 
-/** แถบเตือนหมวดที่ใกล้/เกินงบ — แตะพาไปหน้างบประมาณ กดดูรายละเอียดได้ทันที */
-function BudgetWarning({
-  lines,
-  onOpen,
-}: {
-  lines: BudgetLine[];
-  onOpen: () => void;
-}) {
-  const worst = lines[0];
-  const worstOver = Number(worst.spent) > Number(worst.limit);
-  const message =
-    lines.length === 1
-      ? `${worst.category} ${worstOver ? "เกินงบแล้ว" : "ใกล้ครบงบแล้ว"} ฿${baht(worst.spent)} / ฿${baht(worst.limit)}`
-      : `มี ${lines.length} หมวดใกล้หรือเกินงบแล้ว เริ่มจาก${worst.category}`;
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-2.5 rounded-xl border border-stamp/30 bg-stamp/5 px-4 py-3 text-left text-sm text-stamp hover:bg-stamp/10"
-    >
-      <span className="grid h-2 w-2 shrink-0 place-items-center rounded-full bg-stamp" aria-hidden />
-      <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
-      <span className="shrink-0 text-xs text-stamp/70">ดูงบ ›</span>
-    </button>
-  );
-}
-
 // ---------------------------------------------------------------- รายการล่าสุด
+
+/** "ซื้อวันนี้" · "ซื้อเมื่อวาน" · "ซื้อ จ. 17 พ.ย. 69" */
+const purchasedText = (date: string) => {
+  const label = purchaseDayLabel(date);
+  return label === "วันนี้" || label === "เมื่อวาน" ? `ซื้อ${label}` : `ซื้อ ${label}`;
+};
 
 function RecentTransactions({
   month,
@@ -398,20 +403,16 @@ function RecentTransactions({
   onAdd: () => void;
 }) {
   void month;
-  // ใหม่สุดก่อน — purchased_at เรียงเป็น string 'YYYY-MM-DD' เทียบ lexical ได้ตรงๆ
-  // purchased_time อาจเป็น null จึงต้องกันไว้ตอนเทียบรอง
+  // บันทึกล่าสุดก่อน — uploaded_at เป็น ISO datetime เทียบ lexical ได้ตรงๆ
   const recent = [...(transactions ?? [])]
-    .sort((a, b) => {
-      const byDate = b.purchased_at.localeCompare(a.purchased_at);
-      if (byDate !== 0) return byDate;
-      return (b.purchased_time ?? "").localeCompare(a.purchased_time ?? "");
-    })
+    .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at) || b.created_at.localeCompare(a.created_at))
     .slice(0, 3);
+  const nowMonth = currentMonth();
 
   return (
     <section className="rounded-xl border border-kraft bg-white">
       <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-bold">รายการล่าสุด</h2>
+        <h2 className="text-sm font-bold">เพิ่งบันทึก</h2>
         <button type="button" onClick={onSeeAll} className="text-xs font-medium text-stamp">
           ดูทั้งหมด
         </button>
@@ -422,7 +423,7 @@ function RecentTransactions({
 
       {!pending && !error && recent.length === 0 && (
         <div className="px-4 pb-4">
-          <p className="text-sm text-ink/50">ยังไม่มีรายการในเดือนนี้</p>
+          <p className="text-sm text-ink/60">ยังไม่มีรายการที่บันทึกล่าสุด</p>
           <button
             type="button"
             onClick={onAdd}
@@ -441,14 +442,19 @@ function RecentTransactions({
                 <p className="truncate text-sm font-semibold">
                   {tx.merchant_name ?? "(ไม่ระบุร้าน)"}
                 </p>
-                <p className="text-xs text-ink/50">
-                  {dayLabel(tx.purchased_at)}
-                  {tx.purchased_time && ` ${tx.purchased_time.slice(0, 5)}`}
+                <p className="text-xs text-ink/65">
+                  {purchasedText(tx.purchased_at)}
+                  {tx.purchased_time && ` · ${tx.purchased_time.slice(0, 5)} น.`}
                   {tx.category && ` · ${tx.category}`}
                 </p>
+                {monthOf(tx.purchased_at) !== nowMonth && (
+                  <span className="mt-1 inline-block rounded-full bg-brass/25 px-2 py-0.5 text-[11px] font-medium text-ink">
+                    นับในยอดเดือน {monthShort(monthOf(tx.purchased_at))}
+                  </span>
+                )}
               </div>
               <span className="shrink-0 tabular-nums font-semibold text-stamp">
-                -{baht(tx.total)}
+                −{thb(Number(tx.total))}
               </span>
             </li>
           ))}
@@ -460,92 +466,94 @@ function RecentTransactions({
 
 // ---------------------------------------------------------------- งบประมาณ
 
-const R = 44;
-const STROKE = 16;
-const CIRC = 2 * Math.PI * R;
-const GAP = 3;
-/** สีเดียวกับโดนัทในหน้ารายงาน (stamp/brass/ledger) — ให้สองหน้าดูเป็นระบบเดียวกัน */
-const SLICE_COLOR = ["stroke-stamp", "stroke-brass", "stroke-ledger"];
-const DOT_COLOR = ["bg-stamp", "bg-brass", "bg-ledger"];
-
 type Budget = Awaited<ReturnType<typeof fetchBudget>>;
 
+/**
+ * งบรายหมวดแบบแถบ — แทนโดนัทเดิมที่ชื่อหมวดยาวจนล้นการ์ด และรวมแถบเตือนหมวดเกินงบไว้ในตัว
+ * โชว์ 3 หมวดที่ใช้ไปเป็นสัดส่วนสูงสุด (เกินงบขึ้นก่อน) ดูครบที่หน้างบประมาณ
+ */
 function BudgetWidget({
   pending,
   error,
   data,
   onSeeAll,
+  onSetup,
 }: {
   pending: boolean;
   error: string | null;
   data: Budget | undefined;
   onSeeAll: () => void;
+  onSetup: () => void;
 }) {
-  // เอาเฉพาะหมวดที่ตั้งงบไว้แล้ว เรียงยอดใช้จริงมากไปน้อย โชว์ 3 หมวดแรกให้ไม่รก
-  // เหมือนภาพรวม ดูละเอียดทั้งหมดได้ที่หน้างบประมาณ
-  const top = [...(data?.lines ?? [])]
-    .filter((l) => l.limit !== null)
-    .sort((a, b) => Number(b.spent) - Number(a.spent))
-    .slice(0, 3);
-  const total = top.reduce((s, l) => s + Number(l.spent), 0);
+  const ratio = (l: BudgetLine) => Number(l.spent) / Math.max(Number(l.limit), 1);
+  const budgeted = (data?.lines ?? []).filter((l) => l.limit !== null);
+  const top = [...budgeted].sort((a, b) => ratio(b) - ratio(a)).slice(0, 3);
+  const over = budgeted.filter((l) => ratio(l) > 1).length;
+  const near = budgeted.filter((l) => ratio(l) >= 0.8).length;
+  const summary =
+    over > 0 ? `เกินงบแล้ว ${over} หมวด` : near > 0 ? `${near} หมวดใช้ถึง 80% แล้ว` : null;
 
   return (
-    <section className="rounded-xl border border-kraft bg-white p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold">งบประมาณเดือนนี้</h2>
-        <button type="button" onClick={onSeeAll} className="text-xs font-medium text-stamp">
+    <section className="rounded-xl border border-kraft bg-white">
+      <div className="flex items-center justify-between px-4 pt-3">
+        <h2 className="text-sm font-bold">งบรายหมวด</h2>
+        <button type="button" onClick={onSeeAll} className="min-h-[32px] text-xs font-medium text-stamp">
           ดูทั้งหมด
         </button>
       </div>
+      {summary && (
+        <p className={`px-4 text-xs font-semibold ${over > 0 ? "text-stamp" : "text-[#7A5410]"}`}>{summary}</p>
+      )}
 
-      {pending && <p className="mt-3 text-sm text-ink/50">กำลังโหลด…</p>}
-      {error && <p className="mt-3 text-sm text-stamp">{error}</p>}
+      {pending && <p className="px-4 py-3 text-sm text-ink/60">กำลังโหลด…</p>}
+      {error && <p className="px-4 py-3 text-sm text-stamp">{error}</p>}
 
       {!pending && !error && top.length === 0 && (
-        <p className="mt-3 text-sm text-ink/50">ยังไม่ได้ตั้งงบเดือนนี้</p>
+        <div className="px-4 pb-4 pt-2">
+          <p className="text-sm text-ink/60">ยังไม่ได้ตั้งงบเดือนนี้</p>
+          <button
+            type="button"
+            onClick={onSetup}
+            className="mt-2 rounded-lg border border-dashed border-stamp/40 px-3 py-1.5 text-sm font-medium text-stamp hover:bg-stamp/5"
+          >
+            + ตั้งงบหมวดแรก
+          </button>
+        </div>
       )}
 
       {!pending && !error && top.length > 0 && (
-        <div className="mt-4 flex items-center gap-5">
-          <svg viewBox="0 0 110 110" className="h-24 w-24 shrink-0 -rotate-90">
-            {(() => {
-              let offset = 0;
-              return top.map((l, i) => {
-                const value = Number(l.spent);
-                const len = total > 0 ? (value / total) * CIRC : 0;
-                const gap = top.length > 1 ? GAP : 0;
-                const circle = (
-                  <circle
-                    key={l.category}
-                    cx={55}
-                    cy={55}
-                    r={R}
-                    fill="none"
-                    strokeWidth={STROKE}
-                    className={SLICE_COLOR[i % SLICE_COLOR.length]}
-                    strokeDasharray={`${Math.max(len - gap, 0)} ${CIRC}`}
-                    strokeDashoffset={-offset}
-                  />
-                );
-                offset += len;
-                return circle;
-              });
-            })()}
-          </svg>
-
-          <ul className="flex-1 space-y-2">
-            {top.map((l, i) => (
-              <li key={l.category} className="flex items-center gap-2 text-sm">
-                <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT_COLOR[i % DOT_COLOR.length]}`}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate text-ink/75">{l.category}</span>
-                <span className="shrink-0 tabular-nums font-medium">{baht(l.spent)}</span>
-              </li>
-            ))}
+        <>
+          <ul className="space-y-3 px-4 pb-3 pt-3">
+            {top.map((l) => {
+              const spent = Number(l.spent);
+              const limit = Number(l.limit);
+              const r = ratio(l);
+              const tone = toneOf(r);
+              return (
+                <li key={l.category_id}>
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate font-semibold">
+                      {budgetName(data!.axis, l.category_id, l.category)}
+                    </span>
+                    <span className={`shrink-0 ${tone === "over" ? "text-stamp" : ""}`}>
+                      {tone === "over" ? "เกิน " : "เหลือ "}
+                      <strong>{thb(Math.abs(limit - spent))}</strong>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink/10">
+                    <div className={`h-full rounded-full ${BAR[tone]}`} style={{ width: `${Math.min(r * 100, 100)}%` }} />
+                  </div>
+                  <p className="mt-0.5 font-mono text-[11px] tabular-nums text-ink/65">
+                    {thb(spent)} / {thb(limit)} · {Math.round(r * 100)}%
+                  </p>
+                </li>
+              );
+            })}
           </ul>
-        </div>
+          <p className="border-t border-kraft/70 px-4 py-2.5 text-[11px] text-ink/65">
+            สีแถบ: เขียว = ปกติ · เหลือง = ใช้ถึง 80% · แดง = เกินงบ
+          </p>
+        </>
       )}
     </section>
   );

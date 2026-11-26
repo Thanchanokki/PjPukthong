@@ -7,11 +7,11 @@ import { FALLBACK } from "../categories";
 import { billDiscountText } from "../components/FormFields";
 
 /**
- * หน้าสรุปรายจ่าย — โดนัทสัดส่วนหมวด + รายการหมวด + ยอดรายวัน
+ * หน้าสรุปรายจ่าย — ① กราฟวงกลมสัดส่วน + ตาราง ② กราฟแท่งเทียบหมวด ③ กราฟแท่งรายวัน
  *
  * ข้อมูลจริงทั้งหมดมาจาก fetchMonthly ตัวเดิม (ยังไม่มี endpoint แบบช่วงวันที่)
  * - รายเดือน: ใช้ by_category / by_day ที่ backend สรุปมาให้ตรงๆ
- * - รายสัปดาห์ / กำหนดเอง: ดึงทุกเดือนที่ช่วงนั้นคร่อม แล้วสรุปเองจาก transactions
+ * - กำหนดเอง: ดึงทุกเดือนที่ช่วงนั้นคร่อม แล้วสรุปเองจาก transactions
  *   ตามกติกาเดียวกับ backend (หมวดรายชิ้น ส่วนต่างจากยอดใบ เช่น VAT/ส่วนลด ไปที่ FALLBACK)
  *   พอ backend มี endpoint ช่วงวันที่ ให้เปลี่ยนแค่ฟังก์ชัน summarize ตัวเดียว
  *
@@ -19,7 +19,7 @@ import { billDiscountText } from "../components/FormFields";
  * query key ใช้ชุดเดียวกับหน้ารายการ สลับสองหน้าแล้วไม่ยิงซ้ำ
  */
 
-type View = "month" | "week" | "custom";
+type View = "month" | "custom";
 
 // ---------------------------------------------------------------- วันที่ (เวลาท้องถิ่นทั้งหมด)
 
@@ -43,8 +43,6 @@ const lastDayOf = (month: string) => {
   const d = parseDate(month);
   return isoDate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
 };
-/** สัปดาห์เริ่มวันจันทร์ */
-const mondayOf = (s: string) => addDays(s, -((parseDate(s).getDay() + 6) % 7));
 const daysBetween = (a: string, b: string) =>
   Math.round((parseDate(b).getTime() - parseDate(a).getTime()) / 86_400_000);
 const monthsIn = (start: string, end: string) => {
@@ -63,7 +61,11 @@ const MONTHS_SHORT = [
   "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
 ];
-const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+const monthShortLabel = (month: string) => {
+  const d = parseDate(month);
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
+};
 
 const monthLabel = (month: string) => {
   const d = parseDate(month);
@@ -83,7 +85,7 @@ const rangeLabel = (start: string, end: string) => {
   return `${a.getDate()}–${b.getDate()} ${MONTHS_SHORT[b.getMonth()]} ${by}`;
 };
 
-/** ตัวเลขในโดนัทและรายการปัดเป็นบาทเต็ม — ยอดละเอียดอยู่ใน title */
+/** ตัวเลขในกราฟและตารางปัดเป็นบาทเต็ม — ยอดละเอียดอยู่ใน title */
 const whole = (n: number) => Math.round(n).toLocaleString("th-TH");
 
 // ---------------------------------------------------------------- สรุปข้อมูล
@@ -226,10 +228,10 @@ function itemsIn(txs: Transaction[], category: string): ItemRow[] {
 function CategoryItems({ txs, category }: { txs: Transaction[]; category: string }) {
   const rows = itemsIn(txs, category);
   if (rows.length === 0) {
-    return <p className="mt-3 pl-7 text-xs text-ink/40">ไม่มีรายการ</p>;
+    return <p className="pb-3 pl-6 text-xs text-ink/40">ไม่มีรายการ</p>;
   }
   return (
-    <ul className="mt-3 space-y-2.5 pl-7">
+    <ul className="space-y-2.5 pb-3 pl-6">
       {rows.map((r) => (
         <li key={r.key} className="flex items-start gap-3 text-xs">
           <div className="min-w-0 flex-1">
@@ -269,26 +271,21 @@ function CategoryItems({ txs, category }: { txs: Transaction[]; category: string
 const thaiDate = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
-// ---------------------------------------------------------------- สีของโดนัท
+// ---------------------------------------------------------------- สีของกราฟ
 
 /**
  * จำกัดไว้ 5 สี (4 หมวดแรก + รวมที่เหลือ) — เกินนี้คนเริ่มแยกสีไม่ออก
- * โดยเฉพาะคนตาบอดสี ชื่อหมวดในรายการด้านล่างยังเป็นตัวบอกหลักเสมอ
+ * สีเดียวกันทั้งกราฟวงกลม ตาราง และกราฟแท่ง จับคู่กันได้ทันที
+ * (ใช้ค่าสีตรงๆ เพราะ SVG fill ต้องรู้สีตอน render)
  */
-const PALETTE = [
-  { stroke: "stroke-stamp", swatch: "bg-stamp" },
-  { stroke: "stroke-brass", swatch: "bg-brass" },
-  { stroke: "stroke-ledger", swatch: "bg-ledger" },
-  { stroke: "stroke-ink/60", swatch: "bg-ink/60" },
-  { stroke: "stroke-ink/25", swatch: "bg-ink/25" },
-];
+const PALETTE = ["#BD4A3C", "#D4A13A", "#3A6B4C", "#6F86A0", "#B9AD93"];
 
 type Slice = {
   key: string;
   label: string;
   total: number;
   count: number;
-  color: (typeof PALETTE)[number];
+  color: string;
   /** มีค่าเฉพาะชิ้นที่รวมหลายหมวด */
   members?: CategoryTotal[];
 };
@@ -327,7 +324,8 @@ export default function DashboardPage() {
   const currentMonth = isoMonth(now);
 
   const rawView = params.get("view");
-  const view: View = rawView === "week" || rawView === "custom" ? rawView : "month";
+  // ลิงก์เก่า ?view=week เปิดเป็นรายเดือน (ตัดรายสัปดาห์ออกแล้ว)
+  const view: View = rawView === "custom" ? "custom" : "month";
 
   let start: string;
   let end: string;
@@ -337,10 +335,6 @@ export default function DashboardPage() {
     month = isMonth(m) ? m : currentMonth;
     start = `${month}-01`;
     end = lastDayOf(month);
-  } else if (view === "week") {
-    const s = params.get("start");
-    start = mondayOf(isDate(s) ? s : today);
-    end = addDays(start, 6);
   } else {
     const s = params.get("start");
     const e = params.get("end");
@@ -358,9 +352,6 @@ export default function DashboardPage() {
   const switchView = (next: View) => {
     if (next === view) return;
     if (next === "month") setParams({ view: "month", month: start.slice(0, 7) });
-    // จากรายเดือนไปรายสัปดาห์: ถ้าเป็นเดือนนี้ เปิดสัปดาห์นี้ ไม่งั้นเปิดสัปดาห์แรกของเดือน
-    else if (next === "week")
-      setParams({ view: "week", start: view === "month" && month === currentMonth ? today : start });
     else setParams({ view: "custom", start, end: end > today && start <= today ? today : end });
   };
 
@@ -380,29 +371,22 @@ export default function DashboardPage() {
     : null;
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 text-ink">
-      <h1 className="text-2xl font-semibold">สรุปรายจ่าย</h1>
+    <div className="mx-auto max-w-xl space-y-4 text-ink">
+      <header className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">สรุปรายจ่าย</h1>
+        {view === "month" && (
+          <Stepper
+            label={monthShortLabel(month)}
+            prevLabel="เดือนก่อนหน้า"
+            nextLabel="เดือนถัดไป"
+            onPrev={() => setParams({ view, month: shiftMonth(month, -1) })}
+            onNext={() => setParams({ view, month: shiftMonth(month, 1) })}
+          />
+        )}
+      </header>
 
       <ViewTabs value={view} onChange={switchView} />
 
-      {view === "month" && (
-        <Stepper
-          label={monthLabel(month)}
-          prevLabel="เดือนก่อนหน้า"
-          nextLabel="เดือนถัดไป"
-          onPrev={() => setParams({ view, month: shiftMonth(month, -1) })}
-          onNext={() => setParams({ view, month: shiftMonth(month, 1) })}
-        />
-      )}
-      {view === "week" && (
-        <Stepper
-          label={rangeLabel(start, end)}
-          prevLabel="สัปดาห์ก่อนหน้า"
-          nextLabel="สัปดาห์ถัดไป"
-          onPrev={() => setParams({ view, start: addDays(start, -7) })}
-          onNext={() => setParams({ view, start: addDays(start, 7) })}
-        />
-      )}
       {view === "custom" && (
         <RangePicker
           start={start}
@@ -424,8 +408,9 @@ export default function DashboardPage() {
 
       {summary && summary.receipts > 0 && (
         <>
-          <Breakdown summary={summary} />
-          <DailyChart view={view} start={start} end={end} byDay={summary.byDay} />
+          <Breakdown summary={summary} start={start} end={end} today={today} />
+          <CategoryBars summary={summary} />
+          <DailyChart start={start} end={end} today={today} byDay={summary.byDay} />
         </>
       )}
     </div>
@@ -440,21 +425,18 @@ const focusRing =
 function ViewTabs({ value, onChange }: { value: View; onChange: (v: View) => void }) {
   const tabs: [View, string][] = [
     ["month", "รายเดือน"],
-    ["week", "รายสัปดาห์"],
     ["custom", "กำหนดเอง"],
   ];
   return (
-    <div className="flex gap-2" role="group" aria-label="ช่วงเวลาที่สรุป">
+    <div className="grid grid-cols-2 gap-1 rounded-xl bg-ink/5 p-1" role="group" aria-label="ช่วงเวลาที่สรุป">
       {tabs.map(([key, label]) => (
         <button
           key={key}
           type="button"
           aria-pressed={value === key}
           onClick={() => onChange(key)}
-          className={`rounded-full px-5 py-2 text-sm font-medium transition ${focusRing} ${
-            value === key
-              ? "bg-ink text-paper"
-              : "border border-kraft text-ink/70 hover:bg-ink/5"
+          className={`min-h-[40px] rounded-lg text-sm transition ${focusRing} ${
+            value === key ? "bg-white font-bold text-ink shadow-sm" : "font-medium text-ink/60 hover:text-ink"
           }`}
         >
           {label}
@@ -477,13 +459,13 @@ function Stepper({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const arrow = `grid h-9 w-9 place-items-center rounded-full text-lg text-ink/60 hover:bg-ink/5 ${focusRing}`;
+  const arrow = `grid h-10 w-10 place-items-center rounded-lg border border-kraft bg-white text-lg text-ink/70 hover:bg-ink/5 ${focusRing}`;
   return (
-    <div className="flex items-center justify-between rounded-full border border-kraft px-1 py-1">
+    <div className="flex items-center gap-1">
       <button type="button" className={arrow} onClick={onPrev} aria-label={prevLabel}>
         ‹
       </button>
-      <span className="text-sm font-medium" aria-live="polite">
+      <span className="min-w-[5rem] text-center text-sm font-bold" aria-live="polite">
         {label}
       </span>
       <button type="button" className={arrow} onClick={onNext} aria-label={nextLabel}>
@@ -533,65 +515,159 @@ function Notice({ tone, children }: { tone: "warn" | "error"; children: React.Re
   return <div className={`rounded-lg border p-3 text-sm ${style}`}>{children}</div>;
 }
 
-// ---------------------------------------------------------------- โดนัท + รายการ
+// ---------------------------------------------------------------- การ์ด
 
-const R = 80;
-const STROKE = 36;
-const CIRC = 2 * Math.PI * R;
-/** ช่องว่างระหว่างชิ้น — โปร่งใส เห็นพื้นหลังเดิม ไม่ต้องจับคู่สีพื้น */
-const GAP = 2.5;
+const card = "rounded-2xl border border-kraft bg-white p-4";
 
-function Breakdown({ summary }: { summary: Summary }) {
+function CardTitle({ n, title, note }: { n: string; title: string; note?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <h2 className="font-bold">
+        {n} {title}
+      </h2>
+      {note && <span className="text-right text-xs text-ink/55">{note}</span>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- ① กราฟวงกลม + ตาราง
+
+const VB_W = 360;
+const VB_H = 250;
+const CX = VB_W / 2;
+const CY = VB_H / 2;
+const OUTER = 92;
+const INNER = 52;
+/** ชิ้นที่เล็กกว่านี้เขียน % ข้างในไม่พอ — ดึงเส้นออกมาเขียนชื่อ + % ด้านนอก */
+const INSIDE_MIN = 0.08;
+
+const at = (angle: number, radius: number) =>
+  [CX + radius * Math.cos(angle), CY + radius * Math.sin(angle)] as const;
+
+const pctText = (share: number) => (share > 0 && share < 0.01 ? "<1%" : `${Math.round(share * 100)}%`);
+
+/** ชื่อยาวเกินจะล้นขอบ SVG — ตัดให้สั้นพอสำหรับป้ายนอกวง */
+const shortLabel = (s: string) => (s.length > 12 ? `${s.slice(0, 11)}…` : s);
+
+function Breakdown({
+  summary,
+  start,
+  end,
+  today,
+}: {
+  summary: Summary;
+  start: string;
+  end: string;
+  today: string;
+}) {
   const slices = toSlices(summary.categories);
   const grand = summary.total;
-  const pct = (n: number) => (grand > 0 ? Math.round((n / grand) * 100) : 0);
+  const share = (n: number) => (grand > 0 ? n / grand : 0);
 
-  // ยอดติดลบ (เช่นส่วนลดใน FALLBACK) วาดในโดนัทไม่ได้ แต่ยังแสดงในรายการตามจริง
+  // ยอดติดลบ (เช่นส่วนลดใน FALLBACK) วาดในวงกลมไม่ได้ แต่ยังแสดงในตารางตามจริง
   const drawn = slices.filter((s) => s.total > 0);
   const drawnSum = drawn.reduce((s, x) => s + x.total, 0);
-  let offset = 0;
+
+  let angle = -Math.PI / 2;
+  let outside = 0;
+  const parts = drawn.map((s) => {
+    const sweep = (s.total / drawnSum) * 2 * Math.PI;
+    const a0 = angle;
+    const a1 = angle + sweep;
+    angle = a1;
+    const inside = s.total / drawnSum >= INSIDE_MIN;
+    // ป้ายนอกวงที่อยู่ติดกันสลับระยะใกล้/ไกล กันตัวหนังสือทับกัน
+    const stagger = inside ? 0 : (outside++ % 2) * 16;
+    return { s, a0, a1, mid: (a0 + a1) / 2, inside, stagger };
+  });
+
+  // ช่วงที่ยังไม่จบ (เดือนนี้) แสดงถึงวันนี้ — "1–26 พ.ย." ไม่ใช่ "1–30 พ.ย."
+  const shownEnd = end > today && start <= today ? today : end;
 
   return (
-    <section aria-label="สัดส่วนรายจ่ายตามหมวด">
-      <div className="relative mx-auto w-full max-w-[300px]">
-        <svg
-          viewBox="0 0 200 200"
-          className="block w-full -rotate-90"
-          role="img"
-          aria-label={drawn.map((s) => `${s.label} ${pct(s.total)}%`).join(", ")}
-        >
-          {drawn.map((s) => {
-            const len = (s.total / drawnSum) * CIRC;
-            const gap = drawn.length > 1 ? GAP : 0;
-            const circle = (
-              <circle
+    <section aria-label="สัดส่วนรายจ่ายตามหมวด" className={card}>
+      <CardTitle
+        n="①"
+        title="สัดส่วนรายจ่าย"
+        note={`${rangeLabel(start, shownEnd)} · ${summary.receipts} ใบเสร็จ`}
+      />
+
+      <svg
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+        className="mx-auto mt-1 block w-full max-w-[360px]"
+        role="img"
+        aria-label={drawn.map((s) => `${s.label} ${pctText(share(s.total))}`).join(", ")}
+      >
+        {parts.length === 1 ? (
+          <circle
+            cx={CX}
+            cy={CY}
+            r={(OUTER + INNER) / 2}
+            fill="none"
+            stroke={parts[0].s.color}
+            strokeWidth={OUTER - INNER}
+          />
+        ) : (
+          parts.map(({ s, a0, a1 }) => {
+            const large = a1 - a0 > Math.PI ? 1 : 0;
+            const [x1, y1] = at(a0, OUTER);
+            const [x2, y2] = at(a1, OUTER);
+            const [x3, y3] = at(a1, INNER);
+            const [x4, y4] = at(a0, INNER);
+            return (
+              <path
                 key={s.key}
-                cx={100}
-                cy={100}
-                r={R}
-                fill="none"
-                strokeWidth={STROKE}
-                className={s.color.stroke}
-                strokeDasharray={`${Math.max(len - gap, 0)} ${CIRC}`}
-                strokeDashoffset={-offset}
+                d={`M${x1} ${y1}A${OUTER} ${OUTER} 0 ${large} 1 ${x2} ${y2}L${x3} ${y3}A${INNER} ${INNER} 0 ${large} 0 ${x4} ${y4}Z`}
+                fill={s.color}
+                stroke="#FFFFFF"
+                strokeWidth={2}
               />
             );
-            offset += len;
-            return circle;
-          })}
-        </svg>
-        <div className="pointer-events-none absolute inset-0 grid place-content-center text-center">
-          <p className="text-xs text-brass">รวมทั้งหมด</p>
-          <p className="text-2xl font-bold tabular-nums" title={`฿${baht(grand)}`}>
-            ฿{whole(grand)}
-          </p>
-          <p className="mt-0.5 text-[11px] text-ink/45">{summary.receipts} ใบเสร็จ</p>
-        </div>
-      </div>
+          })
+        )}
 
-      <ul className="mt-8 divide-y divide-kraft/70">
+        {parts.map(({ s, mid, inside, stagger }) => {
+          const text = pctText(s.total / drawnSum);
+          if (inside) {
+            const [tx, ty] = at(mid, (OUTER + INNER) / 2);
+            return (
+              <text key={s.key} x={tx} y={ty + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#FFFFFF">
+                {text}
+              </text>
+            );
+          }
+          const [ex, ey] = at(mid, OUTER + 3);
+          const [lx, ly] = at(mid, OUTER + 16 + stagger);
+          const right = Math.cos(mid) >= 0;
+          const hx = lx + (right ? 14 : -14);
+          return (
+            <g key={s.key}>
+              <polyline points={`${ex},${ey} ${lx},${ly} ${hx},${ly}`} fill="none" stroke={s.color} strokeWidth={1.5} />
+              <text
+                x={hx + (right ? 4 : -4)}
+                y={ly + 4}
+                textAnchor={right ? "start" : "end"}
+                fontSize={12}
+                fontWeight={700}
+                fill="#211D17"
+              >
+                {shortLabel(s.label)} {text}
+              </text>
+            </g>
+          );
+        })}
+
+        <text x={CX} y={CY - 6} textAnchor="middle" fontSize={11} fill="#5E5647">
+          รวม
+        </text>
+        <text x={CX} y={CY + 14} textAnchor="middle" fontSize={17} fontWeight={700} fill="#211D17" className="font-mono">
+          ฿{whole(grand)}
+        </text>
+      </svg>
+
+      <ul className="mt-1">
         {slices.map((s) => (
-          <LegendRow key={s.key} slice={s} pct={pct} txs={summary.txs} />
+          <LegendRow key={s.key} slice={s} share={share} txs={summary.txs} />
         ))}
       </ul>
     </section>
@@ -600,56 +676,50 @@ function Breakdown({ summary }: { summary: Summary }) {
 
 function LegendRow({
   slice,
-  pct,
+  share,
   txs,
 }: {
   slice: Slice;
-  pct: (n: number) => number;
+  share: (n: number) => number;
   txs: Transaction[];
 }) {
   const [open, setOpen] = useState(false);
   const grouped = !!slice.members;
 
-  const row = (
-    <>
-      <span className={`h-3 w-3 shrink-0 rounded-sm ${slice.color.swatch}`} aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-ink/75">
-        {slice.label}
-        <span className="ml-1 text-xs text-ink/40">
-          {open ? "ซ่อน" : grouped ? "ดูทั้งหมด" : `${slice.count} ชิ้น`}
-        </span>
-      </span>
-      <span className="w-12 text-right tabular-nums text-ink/50">{pct(slice.total)}%</span>
-      <span className="w-20 text-right font-medium tabular-nums" title={`฿${baht(slice.total)}`}>
-        {whole(slice.total)}
-      </span>
-    </>
-  );
-
   return (
-    <li className="py-4">
-      {/* ทุกแถวกดได้: หมวดเดี่ยวเปิดดูสินค้าที่สแกนมา, แถว "อีก N หมวด" เปิดดูหมวดที่ถูกรวมไว้ */}
+    <li className="border-t border-kraft/60">
+      {/* ทุกแถวกดได้: หมวดเดี่ยวเปิดดูรายการที่สแกนมา, แถว "อีก N หมวด" เปิดดูหมวดที่ถูกรวมไว้ */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`flex w-full items-center gap-4 text-left text-sm ${focusRing}`}
+        className={`grid w-full grid-cols-[12px_1fr_auto_auto] items-center gap-x-3 py-2.5 text-left text-sm ${focusRing}`}
       >
-        {row}
+        <span className="h-3 w-3 rounded-[3px]" style={{ backgroundColor: slice.color }} aria-hidden />
+        <span className="min-w-0 truncate">
+          <span className="font-semibold">{slice.label}</span>
+          <span className="ml-1.5 text-xs text-ink/50">
+            {open ? "ซ่อน" : grouped ? "ดูทั้งหมด" : `${slice.count} รายการ`}
+          </span>
+        </span>
+        <span className="w-10 text-right text-xs tabular-nums text-ink/55">{pctText(share(slice.total))}</span>
+        <span className="w-20 text-right font-mono font-bold tabular-nums" title={`฿${baht(slice.total)}`}>
+          ฿{whole(slice.total)}
+        </span>
       </button>
 
       {!grouped && open && <CategoryItems txs={txs} category={slice.label} />}
 
       {grouped && open && (
-        <ul className="mt-3 space-y-2 pl-7">
+        <ul className="space-y-2 pb-3 pl-6">
           {slice.members!.map((m) => (
-            <MemberRow key={m.category} member={m} pct={pct} txs={txs} />
+            <MemberRow key={m.category} member={m} share={share} txs={txs} />
           ))}
         </ul>
       )}
 
       {(slice.label === FALLBACK || slice.members?.some((m) => m.category === FALLBACK)) && (
-        <p className="mt-1.5 pl-7 text-xs text-ink/40">
+        <p className="-mt-1 pb-2.5 pl-6 text-xs text-ink/45">
           {FALLBACK} รวม VAT ส่วนลด และของที่ยังไม่ได้เลือกหมวด
         </p>
       )}
@@ -657,14 +727,14 @@ function LegendRow({
   );
 }
 
-/** หมวดที่ถูกรวมอยู่ในแถว "อีก N หมวด" — กดเปิดดูสินค้าของหมวดนั้นได้เหมือนแถวปกติ */
+/** หมวดที่ถูกรวมอยู่ในแถว "อีก N หมวด" — กดเปิดดูรายการของหมวดนั้นได้เหมือนแถวปกติ */
 function MemberRow({
   member: m,
-  pct,
+  share,
   txs,
 }: {
   member: CategoryTotal;
-  pct: (n: number) => number;
+  share: (n: number) => number;
   txs: Transaction[];
 }) {
   const [open, setOpen] = useState(false);
@@ -674,68 +744,168 @@ function MemberRow({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`flex w-full items-center gap-4 text-left text-xs ${focusRing}`}
+        className={`flex w-full items-center gap-3 text-left text-xs ${focusRing}`}
       >
-        <span className="min-w-0 flex-1 truncate text-ink/60">
+        <span className="min-w-0 flex-1 truncate text-ink/70">
           {m.category}
-          <span className="ml-1 text-ink/35">{open ? "ซ่อน" : `${m.count} ชิ้น`}</span>
+          <span className="ml-1 text-ink/45">{open ? "ซ่อน" : `${m.count} รายการ`}</span>
         </span>
-        <span className="w-12 text-right tabular-nums text-ink/45">{pct(m.total)}%</span>
-        <span className="w-20 text-right tabular-nums text-ink/70" title={`฿${baht(m.total)}`}>
-          {whole(m.total)}
+        <span className="w-10 text-right tabular-nums text-ink/50">{pctText(share(m.total))}</span>
+        <span className="w-20 text-right font-mono tabular-nums text-ink/75" title={`฿${baht(m.total)}`}>
+          ฿{whole(m.total)}
         </span>
       </button>
-      {open && <CategoryItems txs={txs} category={m.category} />}
+      {open && <div className="mt-2"><CategoryItems txs={txs} category={m.category} /></div>}
     </li>
   );
 }
 
-// ---------------------------------------------------------------- ยอดรายวัน
+// ---------------------------------------------------------------- ② กราฟแท่งเทียบหมวด
+
+/** ระยะเส้นแกนที่อ่านง่าย (1, 2, 2.5, 5 × 10^n) ให้ได้ราว 3 เส้น */
+function niceStep(max: number) {
+  const raw = max / 3;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  return ([1, 2, 2.5, 5, 10].find((m) => m * pow >= raw) ?? 10) * pow;
+}
+
+const BAR_H = 150;
+
+function CategoryBars({ summary }: { summary: Summary }) {
+  const slices = toSlices(summary.categories);
+  const max = Math.max(...slices.map((s) => s.total), 0);
+  if (max <= 0) return null;
+  const step = niceStep(max);
+  const top = Math.ceil(max / step) * step;
+  const ticks = Array.from({ length: Math.round(top / step) }, (_, i) => (i + 1) * step);
+
+  return (
+    <section aria-label="เทียบรายจ่ายแต่ละหมวด" className={card}>
+      <CardTitle n="②" title="เทียบแต่ละหมวด" note="บาท" />
+
+      <div className="relative mt-4" style={{ height: BAR_H + 22 }}>
+        {/* เส้นแกน — ป้ายตัวเลขชิดซ้าย แท่งเริ่มหลังป้าย */}
+        <div className="absolute inset-x-0 bottom-0" style={{ top: 22 }} aria-hidden>
+          <div className="absolute inset-x-0 bottom-0 border-t border-kraft" />
+          {ticks.map((t) => (
+            <div key={t} className="absolute inset-x-0" style={{ bottom: (t / top) * BAR_H }}>
+              <div className="border-t border-dashed border-kraft/60" />
+              <span className="absolute bottom-0.5 left-0 font-mono text-[10px] text-ink/45">
+                {t >= 1000 ? `${(t / 1000).toLocaleString("th-TH")}k` : t}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="absolute inset-y-0 left-9 right-0 flex items-end">
+          {slices.map((s) => {
+            const h = Math.max((Math.max(s.total, 0) / top) * BAR_H, 3);
+            return (
+              <div key={s.key} className="flex h-full flex-1 flex-col items-center justify-end">
+                <span className="mb-1 font-mono text-[11px] font-bold tabular-nums sm:text-xs">฿{whole(s.total)}</span>
+                <div
+                  className="w-3/5 max-w-[48px] rounded-t-md"
+                  style={{ height: h, backgroundColor: s.color }}
+                  title={`${s.label} ฿${baht(s.total)}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="ml-9 mt-1.5 flex">
+        {slices.map((s) => (
+          <span key={s.key} className="line-clamp-2 flex-1 px-0.5 text-center text-[11px] leading-tight text-ink/75">
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- ③ กราฟแท่งรายวัน
 
 function DailyChart({
-  view,
   start,
   end,
+  today,
   byDay,
 }: {
-  view: View;
   start: string;
   end: string;
+  today: string;
   byDay: Map<string, number>;
 }) {
+  const [picked, setPicked] = useState<string | null>(null);
   const span = daysBetween(start, end) + 1;
   // ช่วงยาวเกินสองเดือนแท่งจะแคบจนอ่านไม่ออก — ข้ามไปเลยดีกว่าแสดงแบบอ่านไม่ได้
   if (span > 62 || byDay.size === 0) return null;
 
   const days = Array.from({ length: span }, (_, i) => addDays(start, i));
-  const max = Math.max(...days.map((d) => byDay.get(d) ?? 0), 0);
-  const every = span <= 14 ? 1 : 7;
+  const values = days.map((d) => byDay.get(d) ?? 0);
+  const max = Math.max(...values, 0);
+  const spentDays = values.filter((v) => v > 0).length;
+  // ค่าเริ่มต้นชี้วันที่ใช้มากสุด — แตะแท่งอื่นเพื่อดูยอดวันนั้น
+  const selected = picked && days.includes(picked) ? picked : days[values.indexOf(max)];
+  const selectedValue = byDay.get(selected) ?? 0;
+  const every = span <= 14 ? 1 : span <= 31 ? 5 : 7;
+  const todayIndex = days.indexOf(today);
+  const label = (d: string) => {
+    const date = parseDate(d);
+    return `${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
+  };
 
   return (
-    <section className="border-t border-kraft pt-6">
-      <h2 className="mb-4 text-sm font-medium text-ink/70">รายจ่ายรายวัน</h2>
-      <div className="flex h-32 items-end gap-[3px]">
+    <section aria-label="รายจ่ายแต่ละวัน" className={card}>
+      <CardTitle n="③" title="ใช้จ่ายแต่ละวัน" note={`มีรายจ่าย ${spentDays} วัน`} />
+
+      <p className="mt-2 text-sm" aria-live="polite">
+        <span className="text-ink/60">{label(selected)}</span>{" "}
+        <strong className="font-mono tabular-nums">฿{whole(selectedValue)}</strong>
+        {selected === days[values.indexOf(max)] && max > 0 && (
+          <span className="ml-1.5 text-xs text-stamp">· มากที่สุด</span>
+        )}
+      </p>
+
+      <div className="mt-2 flex h-28 items-end gap-[2px] border-b border-kraft">
         {days.map((d, i) => {
-          const v = byDay.get(d) ?? 0;
-          const date = parseDate(d);
+          const v = values[i];
+          const active = d === selected;
           return (
-            <div
+            <button
               key={d}
-              className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
-              title={`${date.getDate()} ${MONTHS_SHORT[date.getMonth()]} ฿${baht(v)}`}
+              type="button"
+              onClick={() => setPicked(d)}
+              aria-label={`${label(d)} ฿${baht(v)}`}
+              aria-pressed={active}
+              className={`flex h-full min-w-0 flex-1 flex-col justify-end ${focusRing}`}
             >
-              <div
-                className={`w-full rounded-t-sm ${v > 0 ? "bg-ink/70" : "bg-ink/10"}`}
-                style={{ height: `${max > 0 ? (v / max) * 100 : 0}%`, minHeight: "2px" }}
+              <span
+                className={`block w-full rounded-t-sm ${
+                  v > 0 ? (active ? "bg-stamp" : "bg-ink/75") : active ? "bg-stamp/40" : "bg-ink/10"
+                }`}
+                style={{ height: v > 0 && max > 0 ? `${(v / max) * 100}%` : "2px", minHeight: "2px" }}
               />
-              <span className="h-3 text-[10px] tabular-nums leading-3 text-ink/40">
-                {i % every === 0
-                  ? view === "week"
-                    ? WEEKDAYS[date.getDay()]
-                    : date.getDate()
-                  : ""}
-              </span>
-            </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-1 flex gap-[2px]" aria-hidden>
+        {days.map((d, i) => {
+          const date = parseDate(d);
+          // วันนี้ (ตัวแดง) แสดงเสมอ — ป้ายปกติที่ชิดวันนี้เกินไปซ่อน กันตัวเลขทับกัน
+          const show = d === today || (i % every === 0 && (todayIndex < 0 || Math.abs(i - todayIndex) > 2));
+          return (
+            <span
+              key={d}
+              className={`min-w-0 flex-1 overflow-visible whitespace-nowrap text-center text-[10px] tabular-nums ${
+                d === today ? "font-bold text-stamp" : "text-ink/45"
+              }`}
+            >
+              {show ? date.getDate() : ""}
+            </span>
           );
         })}
       </div>

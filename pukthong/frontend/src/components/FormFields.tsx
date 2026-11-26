@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import type { BillDiscount, LineItem } from "../api";
 import { groupCategories, labelOf, useCategories, useMerchantTypes } from "../categories";
+import { DateSanityNote } from "./DateNotes";
 import { type Form, emptyItem } from "./TransactionForm";
 
 export function Field({
@@ -163,13 +164,16 @@ export function TransactionFields({
 
       {/* วันที่บนใบ ไม่ใช่วันที่สแกน — ตัวนี้เป็นตัวตัดสินว่ายอดไปอยู่เดือนไหน
           ส่วนเวลาที่สแกนเข้าระบบ ระบบบันทึกให้เองและแก้ไม่ได้ */}
-      <Field
-        label="วันที่บนใบเสร็จ *"
-        type="date"
-        value={form.purchased_at}
-        onChange={onChange("purchased_at")}
-        warn={warn("issued_at")}
-      />
+      <div>
+        <Field
+          label="วันที่ซื้อ (ตามใบเสร็จ) *"
+          type="date"
+          value={form.purchased_at}
+          onChange={onChange("purchased_at")}
+          warn={warn("issued_at")}
+        />
+        <DateSanityNote date={form.purchased_at} onFix={onChange("purchased_at")} />
+      </div>
       <Field
         label="เวลาบนใบเสร็จ"
         type="time"

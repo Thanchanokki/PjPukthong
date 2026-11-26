@@ -1,25 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, type FormEvent, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
-import { type Transaction, baht, fetchMonthly } from "../api";
+import { type Transaction, fetchMonthly } from "../api";
 import {
+  AXIS_LABEL,
   type BudgetAxis,
   type BudgetLine,
-  type BudgetOption,
   copyBudget,
   fetchBudget,
   removeBudgetLimit,
+  budgetName,
   saveBudgetLimit,
 } from "../budget";
+import { BudgetIcon } from "../components/BudgetIcon";
 import { FALLBACK, labelOf } from "../categories";
 import { type BudgetItem, BudgetItemsDialog } from "../components/BudgetItemsDialog";
+import { PlusIcon } from "../components/icons";
 
 /**
- * หน้างบประมาณ — ธีม "ม้วนใบเสร็จ" (paper/ink/stamp/ledger/kraft จาก tailwind.config)
+ * หน้างบประมาณ — มีงบสองแบบ "หมวดของ" กับ "ประเภทร้าน" (แท็บ + แผ่นอธิบาย)
  *
- * ส่วนสรุปด้านบนทำเป็นใบเสร็จขอบฉีก: บรรทัดงบ/ใช้ไป แล้วปิดท้ายด้วย "คงเหลือ"
- * ตัวใหญ่ตรงตำแหน่งยอดรวมของใบเสร็จจริง ส่วนรายการหมวดด้านล่างเรียบๆ ไม่แย่งความสนใจ
+ * - การ์ดสรุปสีเข้ม: เหลือในงบ / ใช้ไปจากงบ / วันละเท่าไร และบรรทัด "ใช้จ่ายทั้งเดือน · นอกงบ"
+ *   ที่ยอดใช้จ่ายทั้งเดือนเท่ากันทั้งสองแท็บ ผู้ใช้จะได้เห็นว่าต่างกันแค่ส่วนที่อยู่ในงบ
+ * - แถวงบ: ไอคอน + ชื่อสั้น + "เหลือ" ตัวหนา แตะแถว = ดูรายการ, ปุ่มดินสอ = แก้/ลบวงเงิน
+ * - รายจ่ายที่ยังไม่มีงบรวมเป็นกล่องเดียว มีปุ่มลัดไปหน้าตั้งงบของหมวดนั้น
+ * - ตัวเลขไม่มีทศนิยม
  */
 
 // ---------------------------------------------------------------- เดือน
@@ -68,22 +74,33 @@ const TONE: Record<Tone, { bar: string; text: string }> = {
   over: { bar: "bg-stamp", text: "text-stamp" },
 };
 
-/** ค่าตั้งต้นตอนตั้งงบหมวดที่มีรายจ่ายอยู่แล้ว — ปัดยอดจริงขึ้นเป็นหลัก 500 */
-const suggestLimit = (spent: number) =>
-  spent > 0 ? String(Math.ceil(spent / 500) * 500) : "";
-
 // ---------------------------------------------------------------- page
+
+/** แท็บที่เปิดล่าสุด — กลับมาหน้างบอีกครั้งจะอยู่แท็บเดิม (ค่าเริ่มต้น: ประเภทร้าน ตามที่ใช้มาตลอด) */
+const AXIS_KEY = "budget-axis";
+const lastAxis = (): BudgetAxis => {
+  try {
+    return localStorage.getItem(AXIS_KEY) === "item" ? "item" : "merchant";
+  } catch {
+    return "merchant";
+  }
+};
+
+/** จำนวนเงินไม่มีทศนิยม — หน้างบดูภาพรวม ทศนิยมทำให้อ่านยากโดยไม่ได้ข้อมูลเพิ่ม */
+const thb = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 
 export default function BudgetPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? toMonth(new Date());
-  /** แกนของงบ — ค่าเริ่มต้นคือตามประเภทร้าน (เก็บใน URL ให้ refresh แล้วอยู่แท็บเดิม) */
-  const axis: BudgetAxis = params.get("by") === "item" ? "item" : "merchant";
+  /** แกนของงบ — เก็บใน URL ให้ refresh แล้วอยู่แท็บเดิม ไม่มีใน URL = แท็บที่เปิดล่าสุด */
+  const byParam = params.get("by");
+  const axis: BudgetAxis = byParam === "item" || byParam === "merchant" ? byParam : lastAxis();
   const qc = useQueryClient();
   /** หมวดที่กำลังแก้วงเงินอยู่ — เปิดได้ทีละหมวด */
   const [editing, setEditing] = useState<string | null>(null);
   /** หมวดที่เปิดป๊อปอัพดูรายการสินค้าอยู่ */
   const [detail, setDetail] = useState<BudgetLine | null>(null);
+  const [help, setHelp] = useState(false);
   // รายการของเดือนนี้ — key เดียวกับหน้ารายงาน/หน้าหลัก จึงมักได้จาก cache ทันที
   // โหลดเฉพาะตอนเปิดป๊อปอัพ ไม่ต้องดึงทั้งเดือนทุกครั้งที่เข้าหน้างบ
   const monthly = useQuery({
@@ -131,10 +148,13 @@ export default function BudgetPage() {
   };
   const switchAxis = (next: BudgetAxis) => {
     setEditing(null);
+    try {
+      localStorage.setItem(AXIS_KEY, next);
+    } catch {
+      // storage ปิดอยู่ — แค่จำแท็บไม่ได้
+    }
     setParams({ month, by: next });
   };
-  // นับเป็นรายการสินค้าทั้งสองแกน — ตรงกับ "รวม N รายการ" ในป๊อปอัพ
-  const unit = "รายการ";
 
   const busy = save.isPending || remove.isPending || copy.isPending;
   const mutationError = (save.error ?? remove.error ?? copy.error) as Error | null;
@@ -144,28 +164,40 @@ export default function BudgetPage() {
     .filter((l) => l.limit !== null)
     .sort((a, b) => ratio(b) - ratio(a));
   const unbudgeted = lines
-    .filter((l) => l.limit === null)
+    .filter((l) => l.limit === null && Number(l.spent) > 0)
     .sort((a, b) => Number(b.spent) - Number(a.spent));
-  // ดรอปดาวน์แสดงทุกตัวเลือกของแกนนั้น รวมที่อยู่ในรายการด้านบนแล้วด้วย (เลือกซ้ำ = แก้วงเงิน)
-  // แกนสินค้า backend ส่งมาเฉพาะหมวดหลัก — ยอดของหมวดย่อยรวมอยู่ในหมวดหลักแล้ว
   const options = data?.options ?? [];
 
   const totalLimit = sum(budgeted, "limit");
   const totalSpent = sum(budgeted, "spent");
   const outsideSpent = sum(unbudgeted, "spent");
+  const nearCount = budgeted.filter((l) => toneOf(Number(l.spent), Number(l.limit)) !== "ok").length;
+  const setupLink = (category?: string) =>
+    `/budget/new?month=${month}&by=${axis}${category ? `&category=${category}` : ""}`;
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 text-ink">
+    <div className="mx-auto max-w-xl space-y-4 text-ink">
       <header className="flex items-center gap-2">
         <h1 className="flex-1 text-2xl font-semibold">งบประมาณ</h1>
         <MonthSwitcher month={month} onChange={goTo} />
       </header>
 
-      <AxisTabs value={axis} onChange={switchAxis} />
+      <div>
+        <AxisTabs value={axis} onChange={switchAxis} />
+        <button
+          type="button"
+          onClick={() => setHelp(true)}
+          className="mt-1.5 inline-flex min-h-[32px] items-center gap-1 text-xs font-semibold text-pine hover:text-pine-dark"
+        >
+          <span aria-hidden="true">ⓘ</span> สองแบบต่างกันยังไง?
+        </button>
+      </div>
+
+      {help && <AxisHelpSheet onClose={() => setHelp(false)} />}
 
       {detail && (
         <BudgetItemsDialog
-          title={labelOf({ name: detail.category, icon: detail.icon })}
+          title={labelOf({ name: budgetName(axis, detail.category_id, detail.category), icon: detail.icon })}
           items={itemsOf(monthly.data?.transactions ?? [], axis, detail)}
           spent={Number(detail.spent)}
           loading={monthly.isPending}
@@ -183,7 +215,7 @@ export default function BudgetPage() {
       {data && (
         <>
           {budgeted.length > 0 ? (
-            <ReceiptSummary
+            <SummaryCard
               limit={totalLimit}
               spent={totalSpent}
               outside={outsideSpent}
@@ -192,6 +224,8 @@ export default function BudgetPage() {
           ) : (
             <EmptyBudget
               month={month}
+              axis={axis}
+              total={outsideSpent}
               busy={copy.isPending}
               onCopy={canCopy ? () => copy.mutate() : null}
             />
@@ -200,58 +234,69 @@ export default function BudgetPage() {
           {mutationError && <ErrorBox message={mutationError.message} />}
 
           {budgeted.length > 0 && (
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-ink/60">งบรายหมวด</h2>
-              <ul className="divide-y divide-kraft overflow-hidden rounded-xl border border-kraft bg-white">
+            <section className="overflow-hidden rounded-2xl border border-kraft bg-white">
+              <div className="flex items-baseline justify-between px-4 pb-1 pt-3">
+                <h2 className="font-semibold">งบที่ตั้งไว้ ({budgeted.length})</h2>
+                {nearCount > 0 && (
+                  <span className="text-xs font-semibold text-amber-700">{nearCount} หมวดใกล้ครบ</span>
+                )}
+              </div>
+              <ul className="divide-y divide-kraft/60">
                 {budgeted.map((line) => (
                   <BudgetRow
                     key={line.category_id}
+                    axis={axis}
                     line={line}
-                    unit={unit}
                     open={editing === line.category_id}
                     busy={busy}
-                    onToggle={() =>
-                      editing === line.category_id ? setEditing(null) : setDetail(line)
-                    }
+                    onDetail={() => setDetail(line)}
+                    onEdit={() => setEditing(editing === line.category_id ? null : line.category_id)}
                     onSave={(limit) => save.mutate({ categoryId: line.category_id, limit })}
                     onRemove={() => remove.mutate(line.category_id)}
                   />
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-ink/45">แตะที่หมวดเพื่อดูรายการที่สแกนมาและแก้วงเงิน</p>
             </section>
           )}
 
-          {unbudgeted.length > 0 && (
-            <section>
-              <h2 className="mb-2 text-sm font-medium text-ink/60">
-                มีรายจ่ายแต่ยังไม่ได้ตั้งงบ
-              </h2>
-              <ul className="divide-y divide-kraft overflow-hidden rounded-xl border border-dashed border-kraft">
+          {unbudgeted.length > 0 ? (
+            <section className="rounded-2xl border border-dashed border-kraft bg-paper/60 px-4 py-3">
+              <p className="text-sm font-semibold">
+                ใช้จ่ายนอกงบ {thb(outsideSpent)} — ตั้งงบเพิ่มไหม?
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {unbudgeted.map((line) => (
-                  <UnbudgetedRow
+                  <Link
                     key={line.category_id}
-                    line={line}
-                    unit={unit}
-                    open={editing === line.category_id}
-                    busy={busy}
-                    onOpen={() => setEditing(line.category_id)}
-                    onCancel={() => setEditing(null)}
-                    onSave={(limit) => save.mutate({ categoryId: line.category_id, limit })}
-                  />
+                    to={setupLink(line.category_id)}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-kraft bg-white px-3 text-sm hover:border-stamp/50"
+                  >
+                    <span className="text-ink/70">
+                      <BudgetIcon axis={axis} id={line.category_id} icon={line.icon} className="h-4 w-4" emojiClass="text-sm" />
+                    </span>
+                    {budgetName(axis, line.category_id, line.category)}{" "}
+                    <span className="font-mono tabular-nums">{thb(Number(line.spent))}</span>
+                    <span className="font-semibold text-stamp">+ ตั้งงบ</span>
+                  </Link>
                 ))}
-              </ul>
+              </div>
             </section>
+          ) : (
+            budgeted.length > 0 && (
+              <p className="px-1 text-xs font-semibold text-ledger">
+                ✓ รายจ่ายเดือนนี้อยู่ในงบทั้งหมดแล้ว
+              </p>
+            )
           )}
 
           {options.length > 0 && (
-            <AddBudget
-              label={axis === "merchant" ? "ตั้งงบตามประเภทร้าน" : "ตั้งงบตามหมวดสินค้า"}
-              categories={options}
-              lines={lines}
-              busy={busy}
-              onSave={(categoryId, limit) => save.mutate({ categoryId, limit })}
-            />
+            <Link
+              to={setupLink()}
+              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-stamp text-sm font-semibold text-white hover:bg-stamp/90"
+            >
+              <PlusIcon className="h-5 w-5" aria-hidden="true" />
+              ตั้งงบ{AXIS_LABEL[axis]}
+            </Link>
           )}
         </>
       )}
@@ -294,33 +339,107 @@ function itemsOf(txs: Transaction[], axis: BudgetAxis, line: BudgetLine): Budget
 
 // ---------------------------------------------------------------- ส่วนย่อย
 
-/** สลับงบ "ตามประเภทร้าน" กับ "ตามหมวดสินค้า" — งบสองแบบแยกกันคนละชุด */
+/** สลับงบ "หมวดของ" กับ "ประเภทร้าน" — งบสองแบบแยกกันคนละชุด */
 function AxisTabs({ value, onChange }: { value: BudgetAxis; onChange: (v: BudgetAxis) => void }) {
-  const tabs: { id: BudgetAxis; label: string; hint: string }[] = [
-    { id: "merchant", label: "ตามประเภทร้าน", hint: "" },
-    { id: "item", label: "ตามหมวดสินค้า", hint: "" },
+  const tabs: { id: BudgetAxis; hint: string }[] = [
+    { id: "item", hint: "อาหาร · ของใช้ · การศึกษา" },
+    { id: "merchant", hint: "ร้านอาหาร · 7-Eleven" },
   ];
   return (
-    <div>
-      <div role="tablist" className="grid grid-cols-2 gap-1 rounded-xl bg-ink/5 p-1">
-        {tabs.map((t) => (
+    <div role="tablist" aria-label="วิธีแบ่งงบ" className="grid grid-cols-2 gap-1 rounded-2xl bg-ink/5 p-1">
+      {tabs.map((t) => {
+        const active = value === t.id;
+        return (
           <button
             key={t.id}
             type="button"
             role="tab"
-            aria-selected={value === t.id}
+            aria-selected={active}
             onClick={() => onChange(t.id)}
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-              value === t.id ? "bg-white text-ink shadow-sm" : "text-ink/55 hover:text-ink"
+            className={`flex min-h-[52px] flex-col items-center justify-center rounded-xl px-2 transition ${
+              active ? "bg-white text-ink shadow-sm" : "text-ink/60 hover:text-ink"
             }`}
           >
-            {t.label}
+            <span className={`text-sm ${active ? "font-bold" : "font-medium"}`}>{AXIS_LABEL[t.id]}</span>
+            <span className="text-[11px] text-ink/50">{t.hint}</span>
           </button>
-        ))}
+        );
+      })}
+    </div>
+  );
+}
+
+/** แผ่นอธิบายว่างบสองแบบต่างกันยังไง — ใช้ใบ 7-Eleven ใบเดียวเป็นตัวอย่าง */
+function AxisHelpSheet({ onClose }: { onClose: () => void }) {
+  const closeBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeBtn.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const chip = "rounded-full px-2.5 py-0.5 text-[13px]";
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="axis-help-title"
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-xl space-y-3.5 overflow-y-auto rounded-t-3xl bg-paper px-5 pb-6 pt-5 text-ink"
+      >
+        <div className="flex items-start justify-between">
+          <h2 id="axis-help-title" className="text-lg font-bold">งบสองแบบต่างกันยังไง?</h2>
+          <button
+            ref={closeBtn}
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="-mr-2 -mt-1 grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="text-sm text-ink/70">ตัวอย่าง: ซื้อของที่ 7-Eleven ใบเดียว ฿150</p>
+        <div className="space-y-1 rounded-xl border border-kraft bg-white px-4 py-3 text-sm">
+          {[["ข้าวกล่อง", 50], ["แชมพู", 70], ["ปากกา", 30]].map(([n, v]) => (
+            <div key={n} className="flex justify-between">
+              <span>{n}</span>
+              <span className="font-mono">฿{v}</span>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-1.5 rounded-xl border-2 border-pine bg-white px-4 py-3">
+          <p className="font-bold">{AXIS_LABEL.item}</p>
+          <p className="text-[13px] text-ink/70">แยกเงินตามของแต่ละชิ้น</p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className={`${chip} bg-amber-100`}>อาหาร ฿50</span>
+            <span className={`${chip} bg-pink-100`}>ของใช้ส่วนตัว ฿70</span>
+            <span className={`${chip} bg-mist`}>การศึกษา ฿30</span>
+          </div>
+          <p className="text-xs font-semibold text-ledger">เหมาะกับ: คุมค่ากิน ค่าเรียน แยกเป็นเรื่อง ๆ</p>
+        </div>
+        <div className="space-y-1.5 rounded-xl border border-kraft bg-white px-4 py-3">
+          <p className="font-bold">{AXIS_LABEL.merchant}</p>
+          <p className="text-[13px] text-ink/70">นับทั้งใบเข้าประเภทของร้าน</p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className={`${chip} bg-sky-100`}>สะดวกซื้อ ฿150</span>
+          </div>
+          <p className="text-xs font-semibold text-ledger">เหมาะกับ: คุมการเข้าร้านบางแบบ เช่น ลดเข้า 7-Eleven</p>
+        </div>
+        <p className="text-[13px] leading-relaxed text-ink/70">
+          ยอด<strong className="text-ink">ใช้จ่ายทั้งเดือนเท่ากัน</strong>ทั้งสองแบบ ต่างกันแค่วิธีแบ่งกลุ่ม
+          ตั้งงบแบบไหนก็ได้ หรือตั้งทั้งสองแบบก็ได้ งบสองแบบแยกกัน ไม่กระทบกัน
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[48px] w-full rounded-xl bg-ink text-sm font-bold text-paper hover:bg-ink/90"
+        >
+          เข้าใจแล้ว
+        </button>
       </div>
-      <p className="mt-1.5 text-center text-xs text-ink/45">
-        {tabs.find((t) => t.id === value)!.hint}
-      </p>
     </div>
   );
 }
@@ -349,14 +468,8 @@ function MonthSwitcher({
   );
 }
 
-/** ขอบล่างฉีกเป็นฟันเลื่อยแบบกระดาษใบเสร็จ (mask ใช้แค่ความโปร่งใส ไม่ใช่สีของธีม) */
-const TORN_EDGE: CSSProperties = {
-  WebkitMask:
-    "conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 14px 100%",
-  mask: "conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 14px 100%",
-};
-
-function ReceiptSummary({
+/** การ์ดสรุปสีเข้ม — "เหลือในงบ" ตัวใหญ่ + บรรทัดล่างที่เหมือนกันทั้งสองแท็บ (ใช้จ่ายทั้งเดือน · นอกงบ) */
+function SummaryCard({
   limit,
   spent,
   outside,
@@ -372,96 +485,75 @@ function ReceiptSummary({
   const tone = toneOf(spent, limit);
   const pct = limit > 0 ? Math.min(spent / limit, 1) * 100 : 0;
   const perDay = !over && daysLeft > 0 ? remaining / daysLeft : null;
+  const bar = tone === "ok" ? "bg-[#7FD3BF]" : tone === "near" ? "bg-brass" : "bg-stamp";
 
   return (
-    // drop-shadow อยู่ที่ตัวห่อ เพราะ mask จะตัดเงาของตัวมันเองทิ้ง
-    <div className="drop-shadow-[0_1px_1px_rgba(33,29,23,0.12)]">
-      <section
-        aria-label="สรุปงบเดือนนี้"
-        className="bg-paper px-5 pb-9 pt-5"
-        style={TORN_EDGE}
+    <section aria-label="สรุปงบเดือนนี้" className="space-y-2 rounded-2xl bg-ink px-4 py-4 text-paper">
+      <div className="flex items-baseline justify-between text-sm text-kraft">
+        <span>{over ? "เกินงบ" : "เหลือในงบ"}</span>
+        <span className="text-xs">{daysLeft === 0 ? "เดือนนี้ปิดยอดแล้ว" : `เหลือ ${daysLeft} วัน`}</span>
+      </div>
+      <p className={`font-mono text-3xl font-bold leading-tight tabular-nums ${over ? "text-[#F0A497]" : ""}`}>
+        {thb(Math.abs(remaining))}
+      </p>
+      <div
+        className="h-2 overflow-hidden rounded-full bg-paper/20"
+        role="progressbar"
+        aria-label="สัดส่วนที่ใช้ไปจากงบ"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(pct)}
       >
-        <dl className="space-y-2 text-sm">
-          <LedgerLine label="งบทั้งเดือน" value={limit} />
-          <LedgerLine label="ใช้ไปแล้ว" value={spent} />
-        </dl>
-
-        <div
-          className="mt-4 h-2 overflow-hidden rounded-full bg-ink/10"
-          role="progressbar"
-          aria-label="สัดส่วนที่ใช้ไปจากงบ"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(pct)}
-        >
-          <div className={`h-full rounded-full ${TONE[tone].bar}`} style={{ width: `${pct}%` }} />
-        </div>
-
-        <div className="mt-4 border-t-[3px] border-double border-ink/70 pt-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-medium">{over ? "เกินงบ" : "คงเหลือ"}</span>
-            <span
-              className={`font-mono text-[2.5rem] font-bold leading-none tabular-nums ${
-                over ? "text-stamp" : ""
-              }`}
-            >
-              ฿{baht(Math.abs(remaining))}
-            </span>
-          </div>
-          <p className="mt-2 text-right text-xs text-ink/60">
-            {daysLeft === 0
-              ? "เดือนนี้ปิดยอดแล้ว"
-              : perDay !== null
-                ? `ใช้ได้วันละ ฿${baht(perDay)} อีก ${daysLeft} วัน`
-                : `เหลืออีก ${daysLeft} วัน ลองชะลอรายจ่ายหมวดที่เกินงบ`}
-          </p>
-        </div>
-
-        {outside > 0 && (
-          <p className="mt-4 border-t border-dashed border-kraft pt-3 text-xs text-ink/60">
-            มีรายจ่ายในหมวดที่ยังไม่ได้ตั้งงบอีก{" "}
-            <span className="font-mono tabular-nums">฿{baht(outside)}</span> ไม่ได้นับรวมด้านบน
-          </p>
+        <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-[13px] text-paper/85">
+        ใช้ไป {thb(spent)} จากงบ {thb(limit)}
+        {perDay !== null && (
+          <>
+            {" "}· วันละ <strong className="text-paper">{thb(perDay)}</strong>
+          </>
         )}
-      </section>
-    </div>
-  );
-}
-
-/** บรรทัดแบบใบเสร็จ: ชื่อ ....... จำนวนเงิน */
-function LedgerLine({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <dt className="text-ink/70">{label}</dt>
-      <span aria-hidden className="flex-1 translate-y-[-3px] border-b border-dotted border-ink/25" />
-      <dd className="font-mono tabular-nums">฿{baht(value)}</dd>
-    </div>
+      </p>
+      <div className="flex justify-between border-t border-dashed border-paper/25 pt-2 text-xs text-kraft">
+        <span>ใช้จ่ายทั้งเดือน {thb(spent + outside)}</span>
+        <span>นอกงบ {thb(outside)}</span>
+      </div>
+    </section>
   );
 }
 
 function EmptyBudget({
   month,
+  axis,
+  total,
   busy,
   onCopy,
 }: {
   month: string;
+  axis: BudgetAxis;
+  /** ใช้จ่ายทั้งเดือน (ยังไม่มีงบ จึงเป็นนอกงบทั้งหมด) */
+  total: number;
   busy: boolean;
   /** null = เดือนก่อนไม่มีงบให้คัดลอก จึงไม่แสดงปุ่ม */
   onCopy: (() => void) | null;
 }) {
   return (
-    <section className="rounded-xl bg-paper px-5 py-6">
-      <h2 className="font-semibold">ยังไม่ได้ตั้งงบเดือน{monthLabel(month)}</h2>
-      <p className="mt-1 text-sm text-ink/65">
-        เลือกหมวดใน "ตั้งงบหมวดอื่น" ด้านล่าง หรือกด "ตั้งงบ" ที่หมวดที่มีรายจ่ายแล้ว
-        จากนั้นระบบจะเทียบกับรายจ่ายจากใบเสร็จให้ทุกครั้งที่บันทึก
+    <section className="rounded-2xl bg-ink px-4 py-5 text-paper">
+      <h2 className="font-semibold">ยังไม่ได้ตั้งงบ{AXIS_LABEL[axis]} เดือน{monthLabel(month)}</h2>
+      <p className="mt-1 text-sm text-paper/75">
+        ตั้งงบแล้วระบบจะเทียบกับรายจ่ายจากใบเสร็จให้ทุกครั้งที่บันทึก
       </p>
+      {total > 0 && (
+        <p className="mt-3 border-t border-dashed border-paper/25 pt-2 text-xs text-kraft">
+          ใช้จ่ายทั้งเดือน {thb(total)}
+        </p>
+      )}
       {onCopy && (
         <button
           type="button"
           onClick={onCopy}
           disabled={busy}
-          className="mt-4 rounded-lg bg-stamp px-4 py-2 text-sm font-medium text-white hover:bg-stamp/90 disabled:opacity-50"
+          className="mt-3 min-h-[44px] rounded-xl bg-paper px-4 text-sm font-semibold text-ink hover:bg-paper/90 disabled:opacity-50"
         >
           {busy ? "กำลังคัดลอก…" : `ใช้งบเดียวกับเดือน${monthLabel(shiftMonth(month, -1))}`}
         </button>
@@ -470,21 +562,31 @@ function EmptyBudget({
   );
 }
 
+/** พื้นหลังอ่อนของไอคอนตามสถานะ — ไม่ใช้สีของหมวดเพราะบางหมวดไม่มีสี */
+const ICON_BG: Record<Tone, string> = {
+  ok: "bg-mist text-pine",
+  near: "bg-amber-100 text-amber-800",
+  over: "bg-stamp/10 text-stamp",
+};
+
 function BudgetRow({
+  axis,
   line,
-  unit,
   open,
   busy,
-  onToggle,
+  onDetail,
+  onEdit,
   onSave,
   onRemove,
 }: {
+  axis: BudgetAxis;
   line: BudgetLine;
-  /** หน่วยที่ต่อท้ายจำนวน ("รายการ") */
-  unit: string;
   open: boolean;
   busy: boolean;
-  onToggle: () => void;
+  /** แตะแถว = ดูรายการที่นับเข้างบนี้ */
+  onDetail: () => void;
+  /** ปุ่มดินสอ = แก้/ลบวงเงิน */
+  onEdit: () => void;
   onSave: (limit: number) => void;
   onRemove: () => void;
 }) {
@@ -493,33 +595,49 @@ function BudgetRow({
   const tone = toneOf(spent, limit);
   const pct = limit > 0 ? Math.min(spent / limit, 1) * 100 : 100;
   const left = limit - spent;
+  const name = budgetName(axis, line.category_id, line.category);
 
   return (
     <li className={open ? "bg-paper/60" : ""}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className="block w-full px-4 py-3.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-stamp"
-      >
-        <div className="flex items-baseline gap-3">
-          <span className="min-w-0 flex-1 truncate font-medium">{line.category}</span>
-          <span className="font-mono text-sm tabular-nums">
-            ฿{baht(spent)}
-            <span className="text-ink/40"> / {baht(limit)}</span>
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={onDetail}
+          aria-haspopup="dialog"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-stamp"
+        >
+          <span className={`grid h-10 w-10 flex-none place-items-center rounded-xl ${ICON_BG[tone]}`}>
+            <BudgetIcon axis={axis} id={line.category_id} icon={line.icon} className="h-5 w-5" />
           </span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/10">
-          <div className={`h-full rounded-full ${TONE[tone].bar}`} style={{ width: `${pct}%` }} />
-        </div>
-        <div className="mt-1.5 flex justify-between text-xs">
-          <span className={TONE[tone].text}>
-            {left >= 0 ? `เหลือ ฿${baht(left)}` : `เกินงบ ฿${baht(-left)}`}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="truncate font-semibold">{name}</span>
+              <span className={`flex-none text-sm ${left < 0 ? "text-stamp" : ""}`}>
+                {left >= 0 ? "เหลือ " : "เกิน "}
+                <strong className="font-mono tabular-nums">{thb(Math.abs(left))}</strong>
+              </span>
+            </span>
+            <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-ink/10">
+              <span className={`block h-full rounded-full ${TONE[tone].bar}`} style={{ width: `${pct}%` }} />
+            </span>
+            <span className="mt-1 block font-mono text-[11px] text-ink/55">
+              {thb(spent)} / {thb(limit)} · {Math.round((spent / Math.max(limit, 1)) * 100)}%
+              {line.recurring && " · ทุกเดือน"}
+            </span>
           </span>
-          <span className="text-ink/45">{line.count} {unit}</span>
-        </div>
-      </button>
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`แก้งบ${name}`}
+          aria-expanded={open}
+          className="grid h-9 w-9 flex-none place-items-center rounded-lg border border-kraft bg-white text-ink/60 hover:text-ink"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+            <path d="M4 20h4L19 9l-4-4L4 16z" />
+          </svg>
+        </button>
+      </div>
 
       {open && (
         <div className="px-4 pb-4">
@@ -527,122 +645,12 @@ function BudgetRow({
             initial={String(limit)}
             busy={busy}
             onSave={onSave}
-            onCancel={onToggle}
+            onCancel={onEdit}
             onRemove={onRemove}
           />
         </div>
       )}
     </li>
-  );
-}
-
-function UnbudgetedRow({
-  line,
-  unit,
-  open,
-  busy,
-  onOpen,
-  onCancel,
-  onSave,
-}: {
-  line: BudgetLine;
-  /** หน่วยที่ต่อท้ายจำนวน ("รายการ") */
-  unit: string;
-  open: boolean;
-  busy: boolean;
-  onOpen: () => void;
-  onCancel: () => void;
-  onSave: (limit: number) => void;
-}) {
-  return (
-    <li className="px-4 py-3">
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{line.category}</p>
-          <p className="text-xs text-ink/50">
-            ใช้ไป <span className="font-mono tabular-nums">฿{baht(line.spent)}</span> จาก{" "}
-            {line.count} {unit}
-          </p>
-        </div>
-        {!open && (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-lg border border-stamp/40 px-3 py-1.5 text-sm font-medium text-stamp hover:bg-stamp/5"
-          >
-            ตั้งงบ
-          </button>
-        )}
-      </div>
-      {open && (
-        <LimitEditor
-          initial={suggestLimit(Number(line.spent))}
-          busy={busy}
-          onSave={onSave}
-          onCancel={onCancel}
-        />
-      )}
-    </li>
-  );
-}
-
-function AddBudget({
-  label,
-  categories,
-  lines,
-  busy,
-  onSave,
-}: {
-  label: string;
-  categories: BudgetOption[];
-  /** บรรทัดงบของเดือนนี้ — ใช้บอกวงเงิน/ยอดเดิมในดรอปดาวน์ และเติมวงเงินเดิมตอนเลือก */
-  lines: BudgetLine[];
-  busy: boolean;
-  /** ส่ง id ของหมวด ไม่ใช่ชื่อ — ชื่อหมวดเปลี่ยนได้ แต่ id ไม่เปลี่ยน */
-  onSave: (categoryId: string, limit: number) => void;
-}) {
-  const [category, setCategory] = useState("");
-  const lineOf = (id: string) => lines.find((l) => l.category_id === id);
-  const hint = (id: string) => {
-    const l = lineOf(id);
-    if (l?.limit) return ` · ตั้งไว้ ฿${baht(l.limit)}`;
-    if (l && Number(l.spent) > 0) return ` · ใช้ไป ฿${baht(l.spent)}`;
-    return "";
-  };
-
-  return (
-    <section>
-      <label htmlFor="add-budget-category" className="mb-2 block text-sm font-medium text-ink/60">
-        {label}
-      </label>
-      <select
-        id="add-budget-category"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        className="w-full rounded-lg border border-kraft bg-white px-3 py-2 text-sm focus:border-stamp focus:outline-none focus:ring-1 focus:ring-stamp"
-      >
-        <option value="">เลือกหมวด</option>
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>
-            {labelOf(c)}
-            {hint(c.id)}
-          </option>
-        ))}
-      </select>
-      {category && (
-        <LimitEditor
-          key={category}
-          // หมวดที่ตั้งงบไว้แล้วเริ่มจากวงเงินเดิม ให้เห็นว่ากำลังแก้ ไม่ใช่ตั้งใหม่
-          initial={lineOf(category)?.limit ? String(Number(lineOf(category)!.limit)) : ""}
-          busy={busy}
-          onSave={(limit) => {
-            onSave(category, limit);
-            setCategory("");
-          }}
-          onCancel={() => setCategory("")}
-        />
-      )}
-    </section>
   );
 }
 

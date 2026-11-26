@@ -6,6 +6,10 @@
  *              (หมวดย่อยรวมขึ้นหมวดหลัก) ตัวเลขสองหน้าจึงตรงกันเสมอ
  * - merchant = ตามประเภทร้าน — นับยอดรวม "ทั้งใบ" เข้าประเภทของร้านที่ออกใบ
  *              (ใบ 7-Eleven ที่มีนมกับปากกา = ร้านสะดวกซื้อทั้งใบ)
+ *
+ * งบ "ใช้ทุกเดือน" ไม่ถูกคัดลอกลง DB ทุกเดือน — เดือนที่ไม่มี document ของหมวดนั้น
+ * ย้อนดู document ล่าสุดก่อนหน้า ถ้าเป็น recurring ก็ใช้วงเงินนั้น (ดู effectiveLimits)
+ * แก้วงเงินเดือนไหน = เริ่มชุดใหม่ตั้งแต่เดือนนั้น ลบ = เขียนตัวกั้น removed ไว้
  */
 import { randomUUID } from "node:crypto";
 
@@ -72,18 +76,44 @@ async function spentAndOptions(userId: string, month: string, axis: BudgetAxis) 
     spent: new Map<string, Spent>(
       [...acc].map(([id, v]) => [id, { total: v.total.toFixed(2), count: v.count }]),
     ),
-    options: MERCHANT_TYPES.map((t) => describe(t.id)),
+    // ประเภทที่ไม่รองรับ (ใบเบี้ยประกัน) ตั้งงบไม่ได้ — ไม่มีรายการไหนบันทึกเป็นประเภทนั้นได้
+    options: MERCHANT_TYPES.filter((t) => !t.unsupported).map((t) => describe(t.id)),
     describe,
   };
 }
 
+type Effective = { limit: string; recurring: boolean };
+
+/**
+ * วงเงินที่ใช้จริงของเดือนนี้ต่อหมวด
+ * - มี document ของเดือนนี้: ใช้ตัวนั้น (removed = ไม่มีงบ)
+ * - ไม่มี: ใช้ document ล่าสุดก่อนเดือนนี้ ถ้าตัวนั้นเป็น recurring และไม่ใช่ตัวกั้น
+ */
+async function effectiveLimits(userId: string, month: string, axis: BudgetAxis) {
+  const docs = await budgets
+    .find({ userId, axis, month: { $lte: month } })
+    .sort({ month: -1 })
+    .toArray();
+  const out = new Map<string, Effective>();
+  const seen = new Set<string>();
+  for (const b of docs) {
+    if (seen.has(b.categoryId)) continue;
+    seen.add(b.categoryId);
+    if (b.removed) continue;
+    if (b.month === month || b.recurring) {
+      out.set(b.categoryId, { limit: b.limit, recurring: b.recurring === true });
+    }
+  }
+  return out;
+}
+
 export async function getBudget(userId: string, month: string, axis: BudgetAxis) {
   requireMonth(month);
-  const [{ spent, options, describe }, limits] = await Promise.all([
+  const [{ spent, options, describe }, effective] = await Promise.all([
     spentAndOptions(userId, month, axis),
-    budgets.find({ userId, month, axis }).toArray(),
+    effectiveLimits(userId, month, axis),
   ]);
-  const limitOf = new Map(limits.map((b) => [b.categoryId, b.limit]));
+  const limitOf = new Map([...effective].map(([id, e]) => [id, e.limit]));
 
   const ids = new Set([...limitOf.keys(), ...spent.keys()]);
   const lines = [...ids]
@@ -96,6 +126,7 @@ export async function getBudget(userId: string, month: string, axis: BudgetAxis)
         icon: o.icon,
         color: o.color,
         limit: limitOf.get(id) ?? null,
+        recurring: effective.get(id)?.recurring ?? false,
         spent: s?.total ?? "0.00",
         count: s?.count ?? 0,
       };
@@ -108,7 +139,7 @@ export async function getBudget(userId: string, month: string, axis: BudgetAxis)
 
 async function assertSelectable(userId: string, axis: BudgetAxis, id: string) {
   if (axis === "merchant") {
-    if (!MERCHANT_TYPES.some((t) => t.id === id)) throw httpError(422, "ไม่พบประเภทร้านที่เลือก");
+    if (!MERCHANT_TYPES.some((t) => t.id === id && !t.unsupported)) throw httpError(422, "ไม่พบประเภทร้านที่เลือก");
     return;
   }
   const c = (await loadBook(userId)).get(id);
@@ -124,6 +155,8 @@ export async function setLimit(
   axis: BudgetAxis,
   categoryId: string,
   rawLimit: unknown,
+  /** ไม่ส่ง = คงค่าเดิมของหมวดนี้ (เช่นแก้วงเงินจากแถวในหน้างบ) */
+  rawRecurring?: unknown,
 ): Promise<void> {
   requireMonth(month);
   await assertSelectable(userId, axis, categoryId);
@@ -133,11 +166,16 @@ export async function setLimit(
   if (value === null || !value.gt(0)) throw httpError(422, "วงเงินต้องมากกว่า 0 บาท");
   if (value.gt(MAX_LIMIT)) throw httpError(422, "วงเงินสูงเกินไป ตรวจจำนวนศูนย์อีกครั้ง");
 
+  const recurring =
+    typeof rawRecurring === "boolean"
+      ? rawRecurring
+      : ((await effectiveLimits(userId, month, axis)).get(categoryId)?.recurring ?? false);
+
   const now = new Date();
   await budgets.updateOne(
     { userId, month, axis, categoryId },
     {
-      $set: { limit: limit as string, updatedAt: now },
+      $set: { limit: limit as string, recurring, removed: false, updatedAt: now },
       $setOnInsert: { _id: randomUUID(), createdAt: now },
     },
     { upsert: true },
@@ -151,7 +189,16 @@ export async function removeLimit(
   categoryId: string,
 ) {
   requireMonth(month);
-  await budgets.deleteOne({ userId, month, axis, categoryId });
+  // เขียนตัวกั้นแทนการลบ — งบ recurring ของเดือนก่อนจะได้ไม่ไหลกลับมาในเดือนนี้และเดือนถัดไป
+  const now = new Date();
+  await budgets.updateOne(
+    { userId, month, axis, categoryId },
+    {
+      $set: { limit: "0.00", recurring: false, removed: true, updatedAt: now },
+      $setOnInsert: { _id: randomUUID(), createdAt: now },
+    },
+    { upsert: true },
+  );
 }
 
 /** ใช้งบชุดเดียวกับเดือนอื่น (แกนเดียวกัน) — ทับงบที่มีอยู่ของเดือนปลายทางทั้งหมด */
@@ -163,7 +210,11 @@ export async function copyBudget(
 ) {
   requireMonth(fromMonth);
   requireMonth(toMonth);
-  const source = await budgets.find({ userId, month: fromMonth, axis }).toArray();
+  // ใช้วงเงินที่เห็นจริงของเดือนต้นทาง รวมงบ "ใช้ทุกเดือน" ที่ไม่ได้มี document ของเดือนนั้น
+  const source = [...(await effectiveLimits(userId, fromMonth, axis))].map(([categoryId, e]) => ({
+    categoryId,
+    ...e,
+  }));
   if (source.length === 0) {
     throw httpError(422, "เดือนก่อนหน้ายังไม่ได้ตั้งงบไว้ ลองตั้งงบทีละหมวดแทน");
   }
@@ -178,6 +229,7 @@ export async function copyBudget(
       axis,
       categoryId: b.categoryId,
       limit: b.limit,
+      recurring: b.recurring,
       createdAt: now,
       updatedAt: now,
     })),
