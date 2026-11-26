@@ -1,7 +1,7 @@
 /**
  * ป๊อปอัพเตือนงบใกล้หมด/เกินงบ — เด้งครั้งเดียวหลังเข้าสู่ระบบ
  *
- * ดูงบของเดือนนี้ทั้งสองแกน (ตามประเภทร้าน + ตามหมวดสินค้า) เพราะผู้ใช้ตั้งงบแกนไหนไว้ก็ได้
+ * ดูงบของเดือนนี้ทั้งสองแกน (ประเภทร้าน + หมวดของ) เพราะผู้ใช้ตั้งงบแกนไหนไว้ก็ได้
  * เกณฑ์เดียวกับหน้างบประมาณ: ใช้ถึง 80% = ใกล้เกินงบ, เกินวงเงิน = เกินงบแล้ว
  *
  * "ครั้งเดียว" = ต่อการเข้าสู่ระบบหนึ่งครั้งต่อเดือน — จำไว้ใน sessionStorage จึงไม่เด้งซ้ำ
@@ -15,15 +15,13 @@ import { useNavigate } from "react-router-dom";
 import { baht } from "../api";
 import { useAuth } from "../auth";
 import { ReceiptIcon, StoreIcon, ListLinesIcon, WarningIcon } from "./icons";
-import { BUDGET_ALERT_KEY, type BudgetAxis, type BudgetLine, fetchBudget } from "../budget";
+import { AXIS_LABEL, BUDGET_ALERT_KEY, type BudgetAxis, type BudgetLine, fetchBudget } from "../budget";
 
 /** เวลาท้องถิ่น — toISOString() เป็น UTC ช่วงตี 0–7 โมงไทยจะได้เดือนผิด */
 const thisMonth = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
-
-const AXIS_LABEL: Record<BudgetAxis, string> = { merchant: "ตามประเภทร้าน", item: "ตามหมวดสินค้า" };
 
 type Alert = BudgetLine & { axis: BudgetAxis; ratio: number };
 
@@ -154,7 +152,7 @@ export function BudgetAlertDialog() {
                 </div>
                 <p className="mt-2 text-xs text-ink/60">
                   ใช้ไป ฿{baht(a.spent)} จากงบ ฿{baht(a.limit)} ({Math.round(a.ratio * 100)}%)
-                  {showAxis && ` · ${AXIS_LABEL[a.axis]}`}
+                  {showAxis && ` · งบ${AXIS_LABEL[a.axis]}`}
                 </p>
               </li>
             );
