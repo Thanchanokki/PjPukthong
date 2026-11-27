@@ -54,7 +54,8 @@
  *     (ฟิลด์ที่ไม่คิดคะแนนตัดออกแล้วปรับน้ำหนักที่เหลือให้รวมเป็น 1), S3 = สัดส่วนเงินที่จัดหมวดถูก,
  *     คะแนนรวม = 0.625 S2 + 0.375 S3 (= น้ำหนัก 0.5 : 0.3 ของชั้น 2 : 3 เมื่อตัดชั้น OCR ออก)
  *     Exact Match = ยอดรวม วันที่ ชื่อร้าน VAT ส่วนลด รายการ และหมวด ถูกหมดทั้งใบ
- *   - CER = edit distance / ความยาวเฉลย (ตัดช่องว่าง แท็ก HTML และสัญลักษณ์ markdown ออกก่อน)
+ *   - CER = edit distance / ความยาวเฉลย (ตัดช่องว่าง แท็ก HTML และสัญลักษณ์ markdown ออกก่อน
+ *     และไม่นับคำบรรยายรูปใน <figure> ที่ OCR แต่งขึ้นเอง)
  *   - ใบที่เรียก API ไม่สำเร็จ (ล่ม/โดนจำกัด) ไม่ถูกนับเป็นผิด แต่แจ้งจำนวนแยกไว้
  *   - ทุกครั้งที่รันจะให้คะแนนผลเก่าใหม่ด้วยเฉลยปัจจุบัน — แก้เฉลยแล้วไม่ต้องเรียก API ซ้ำ
  */
@@ -69,7 +70,7 @@ import { prepareForOcr, requestOcr } from "../modules/receipts/ocr.provider.js";
 import { enrich } from "../modules/receipts/receipts.enrich.js";
 import { parseDraft } from "../modules/receipts/receipts.schema.js";
 import { unsupportedReason } from "../modules/receipts/receipts.support.js";
-import { SYSTEM_CATEGORIES, matchCategory } from "../shared/categories.js";
+import { SYSTEM_CATEGORIES, matchCategory, promptName, stripExamples } from "../shared/categories.js";
 import { normalizeKind } from "../shared/discounts.js";
 import { MERCHANT_TYPES, categoryForItem, matchMerchantType, merchantTypeOf } from "../shared/merchant-types.js";
 import { Decimal } from "../shared/money.js";
@@ -172,9 +173,13 @@ function merchantMatches(truth: string, pred: string | null): boolean {
   return 1 - levenshtein(a, b) / Math.max(a.length, b.length) >= 0.8;
 }
 
-/** ข้อความ OCR เป็น markdown + HTML table — ตัดโครงสร้างออกให้เหลือแต่ตัวอักษรก่อนคิด CER */
+/**
+ * ข้อความ OCR เป็น markdown + HTML table — ตัดโครงสร้างออกให้เหลือแต่ตัวอักษรก่อนคิด CER
+ * <figure> คือคำบรรยายรูป (โลโก้ ฯลฯ) ที่ OCR แต่งขึ้นเอง ไม่ใช่ข้อความบนใบ — ตัดทั้งก้อน
+ */
 const plain = (s: string) =>
   s
+    .replace(/<figure>[\s\S]*?<\/figure>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -312,7 +317,7 @@ type BillDiscount = { kind: string; amount: string };
 type Truth = TruthRow & { itemList: Item[]; billList: BillDiscount[]; hasCategories: boolean };
 
 /** id ของหมวดกลาง (shared/categories.ts) — ในเฉลยใช้ id หรือชื่อไทยก็ได้ */
-const categoryId = (v: string) => matchCategory(v, SYSTEM_CATEGORIES);
+const categoryId = (v: string) => matchCategory(stripExamples(v), SYSTEM_CATEGORIES);
 const categoryName = (id: string | null) =>
   id === null ? "(ไม่ได้จัดหมวด)" : (SYSTEM_CATEGORIES.find((c) => c.id === id)?.name ?? id);
 
@@ -379,9 +384,11 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     item.category_guess = categoryId(guess ?? "") ?? categoryId(guess?.split(">").pop() ?? "") ?? null;
   }
   const guesses = new Map(d.line_items.map((i) => [i, i.category_guess]));
+  // ตัดสินป๊อปอัพก่อนล้างประเภทร้านที่ไม่รองรับ — ลำดับเดียวกับ receipts.service
+  const unsupported = unsupportedReason(d)?.kind ?? null;
   if (d.merchant_type) {
     const type = merchantTypeOf(d.merchant_type);
-    if (type.noItems) d.line_items = [];
+    if (type.unsupported) d.merchant_type = null;
     else for (const item of d.line_items) item.category_guess = categoryForItem(type, item.category_guess);
   }
   return {
@@ -404,7 +411,7 @@ function snapshotOf(payload: Record<string, unknown> | null): Snapshot {
     billDiscounts: d.bill_discounts
       .map((b) => ({ kind: b.kind as string, amount: money(b.amount) }))
       .filter((b): b is BillDiscount => b.amount !== null),
-    unsupported: unsupportedReason(d)?.kind ?? null,
+    unsupported,
   };
 }
 
@@ -678,7 +685,8 @@ const TRUTH_TYPE_LABEL: Record<string, string> = {
 
 // ------------------------------------------------------------------ ประเมินทีละใบ
 
-const categoryList = SYSTEM_CATEGORIES.map((c) => c.name).join(" | ");
+// รูปแบบเดียวกับ CategoryBook.promptList ของแอป (หมวดกลางล้วน ไม่มีหมวดที่ผู้ใช้สร้าง)
+const categoryList = SYSTEM_CATEGORIES.map((c) => promptName(c.name, c.examples)).join(" | ");
 const ocrFile = (r: { file: string; size: number; run: number }) =>
   path.join(RAW, "ocr", `${path.parse(r.file).name}__${r.size}px__r${r.run}.txt`);
 
